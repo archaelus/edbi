@@ -12,7 +12,7 @@ D_INC_DIRS=$(subst lib/, -I lib/,$(wildcard lib/*/include))
 D_EBIN_DIRS=$(subst lib/, -pa lib/,$(wildcard lib/*/ebin))
 
 INCLUDE ?=-I ${ERLANG_ROOT}/lib/stdlib-*/include ${D_INC_DIRS} -I ${EUNIT_ROOT}/include -I include/
-CODEPATH ?=-pz lib/*/ebin/ -pz ebin/
+CODEPATH ?=-pz lib/*/ebin/ -pz ebin/ -pz ${EUNIT_ROOT}/ebin/
 CODEPATH_JUNGERL ?=-pz ${JUNGERL_ROOT}/lib/*/ebin/
 
 ERLC_CODEPATH ?=${D_EBIN_DIRS} -pz ${EUNIT_ROOT}/ebin -pz ebin
@@ -23,7 +23,7 @@ EXTRA_DIALYZER_BEAM_FILES ?=$(wildcard lib/oserl*/ebin/*.beam lib/common_lib*/eb
 
 NODE ?=-name ${APP_NAME}@127.0.0.1
 
-all: ${BEAM_FILES} src/TAGS
+all: ebin ${BEAM_FILES} src/TAGS
 
 release: ${BEAM_FILES} test xref dialyzer.report docs releases/${VSN}/${APP_NAME}.tar.gz
 
@@ -40,14 +40,15 @@ clean:
 	@rm -f ebin/*.beam priv/sasl/* priv/sasl.log priv/yaws/logs/*.{log,old,access}
 	@find src/ priv/ -iname \*~ | xargs rm -v
 
+ebin:
+	[ ! -d ebin ] && mkdir ebin
+
 ebin/%.beam: src/%.erl ${HRL_FILES}
 	@echo $@: erlc ${ERLC_FLAGS} ${ERLC_CODEPATH} ${ERLC_CODEPATH_JUNGERL} ${INCLUDE} $<
 	@erlc ${ERLC_FLAGS} ${ERLC_CODEPATH} ${ERLC_CODEPATH_JUNGERL} ${INCLUDE} $<
 
 docs: ${ERL_FILES}
 	erl -noshell -run edoc_run application "'$(APP_NAME)'" '"."' '[{def,{vsn,"$(VSN)"}}]'
-	rm -rf priv/yaws/docroot/doc
-	cp -r doc priv/yaws/docroot/
 
 test: ${BEAM_FILES}
 	erl $(CODEPATH) $(CODEPATH_JUNGERL) -config priv/${APP_NAME} -eval "lists:map(fun(A) -> {A,application:start(A)} end, [${APP_DEPS}]), application:load(${APP_NAME}), lists:foreach(fun (M) -> io:fwrite(\"Testing ~p:~n\", [M]), eunit:test(M) end, [`perl -e 'print join(",", qw(${MODULES}));'`])." -s init stop -noshell

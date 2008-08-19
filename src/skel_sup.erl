@@ -10,7 +10,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -21,11 +21,11 @@
 %% API functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% @spec start_link() -> {ok,Pid} | ignore | {error,Error}
+%% @spec start_link(Args::any()) -> {ok,Pid} | ignore | {error,Error}
 %% @doc: Starts the supervisor
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
+start_link(_) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%====================================================================
@@ -44,7 +44,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     AChild = {"Skeleton Server",
-              {skel_server,start_link,[]},
+              {skel_srv,start_link,[]},
               permanent,2000,worker,
               [skel_server]},
     {ok,{{one_for_all,0,1}, [AChild]}}.

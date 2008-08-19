@@ -31,7 +31,7 @@
 %% does not return until Module:init/1 has returned.  
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %%====================================================================
 %% gen_fsm callbacks

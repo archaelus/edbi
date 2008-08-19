@@ -5,7 +5,7 @@
 %% @doc application skeleton 
 %% @end
 %%%-------------------------------------------------------------------
--module(skell_app).
+-module(skel_app).
 
 -behaviour(application).
 
@@ -26,12 +26,7 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    case skel_sup:start_link(StartArgs) of
-        {ok, Pid} -> 
-            {ok, Pid};
-        Error ->
-            Error
-    end.
+    skel_sup:start_link(StartArgs).
 
 %%--------------------------------------------------------------------
 %% Function: stop(State) -> void()
