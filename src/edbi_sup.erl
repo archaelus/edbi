@@ -5,12 +5,15 @@
 %% @doc supervisor template
 %% @end
 %%%-------------------------------------------------------------------
--module(skel_sup).
+-module(edbi_sup).
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/1]).
+-export([start_link/1
+         ,start_pool/2
+         ,pool/1
+         ,connection/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -28,6 +31,30 @@
 start_link(_) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
+start_pool(Id, Args) ->
+    CSpec = {Id,
+             {edbi_pool,start_link, Args},
+             transient,2000,worker,
+             [edbi_pool]},
+    supervisor:start_child(?SERVER, CSpec).
+
+pool(Id) ->
+    case lists:keysearch(Id, 1, supervisor:which_children(?SERVER)) of
+        false ->
+            {error, {no_such_pool, Id}};
+        {value, {_Id, Pid, _, _}} when is_pid(Pid) ->
+            {ok, Pid};
+        _ ->
+            {error, {not_running, Id}}
+    end.
+
+connection({ok, Pid}) ->
+    edbi_pool:connection(Pid);
+connection({error, E}) ->
+    {error, E};
+connection(Pool) ->
+    connection(pool(Pool)).
+
 %%====================================================================
 %% Supervisor callbacks
 %%====================================================================
@@ -43,12 +70,4 @@ start_link(_) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    AChild = {"Skeleton Server",
-              {skel_srv,start_link,[]},
-              permanent,2000,worker,
-              [skel_server]},
-    {ok,{{one_for_all,0,1}, [AChild]}}.
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
+    {ok,{{one_for_one,0,60},[]}}.

@@ -2,15 +2,33 @@
 %% @copyright Geoff Cant
 %% @author Geoff Cant <nem@erlang.geek.nz>
 %% @version {@vsn}, {@date} {@time}
-%% @doc application skeleton 
+%% @doc EDBI Application
 %% @end
 %%%-------------------------------------------------------------------
--module(skel_app).
+-module(edbi_app).
 
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/0, start/2, stop/1]).
+
+ensure_started(App) ->
+    case application:start(App) of
+        ok ->
+            true;
+        {error, {already_started, App}} ->
+            true;
+        Else -> 
+            error_logger:error_msg("Couldn't start ~p: ~p", [App, Else])
+    end.
+        
+%% @spec start() -> ok
+%% @doc Start the vhreg server.
+start() ->
+    application:load(edbi),
+    {ok, Deps} = application:get_key(edbi, applications),
+    true = lists:all(fun ensure_started/1, Deps),
+    application:start(edbi).
 
 %%====================================================================
 %% Application callbacks
@@ -26,7 +44,13 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    skel_sup:start_link(StartArgs).
+    case edbi_sup:start_link(StartArgs) of
+        {ok, Pid} ->
+            load_pools(),
+            {ok, Pid};
+        Else ->
+            Else
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: stop(State) -> void()
@@ -36,6 +60,21 @@ start(_Type, StartArgs) ->
 %%--------------------------------------------------------------------
 stop(_State) ->
     ok.
+
+load_pools() ->
+    lists:foreach(fun load_pool/1, pools()).
+
+load_pool({Id, Driver, Options, Count}) ->
+    case edbi_sup:start_pool(Id, [Driver, Options, Count]) of
+        {ok, _} -> ok;
+        {error, Reason} ->
+            erlang:error({couldnt_start_pool, Reason})
+    end.
+
+pools() ->
+    {ok, Pools} = application:get_env(edbi, pools),
+    Pools.
+
 
 %%====================================================================
 %% Internal functions

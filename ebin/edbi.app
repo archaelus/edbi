@@ -1,8 +1,9 @@
-{application, skel,
- [{description, "Erlang Skeletons"},
+{application, edbi,
+ [{description, "Erlang Databace Independant Interface"},
   {vsn, "0.1"},
   {applications, [kernel, stdlib, sasl]},
-  {mod, {skel_app, []}},
-  {modules, [skel_app, skel_sup]},
-  {registered, [skel_sup, skel_server]}
+  {mod, {edbi_app, []}},
+  {env, [{pools, []}]},
+  {modules, [edbi_app, edbi_sup]},
+  {registered, [edbi_sup]}
  ]}.
