@@ -24,7 +24,7 @@ connect(Driver, _) ->
     erlang:error({unknown_driver, Driver}).
 
 connect_mfa(pgsql, Options) ->
-    {pgsql, connect_link, Options};
+    {pgsql, connect_link, [Options]};
 connect_mfa(dummy, Options) ->
     {edbi_dummy, connect, Options};
 connect_mfa(Driver, _) ->

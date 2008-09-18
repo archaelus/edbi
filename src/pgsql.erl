@@ -8,7 +8,8 @@
 %%
 
 -module(pgsql).
--export([connect/1, connect/4, connect/5]).
+-export([connect/1, connect/4, connect/5,
+         connect_link/1]).
 
 -export([squery/2, 
 	 pquery/3, 
@@ -32,6 +33,9 @@ connect(Host, Database, User, Password, Port) ->
 
 connect(Options) ->
     pgsql_proto:start(Options).
+
+connect_link(Options) ->
+    pgsql_proto:start_link(Options).
 
 %% Close a connection
 terminate(Db) ->
