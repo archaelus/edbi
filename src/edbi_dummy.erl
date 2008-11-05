@@ -5,11 +5,11 @@
 %% @end
 -module(edbi_dummy).
 
--export([connect/1
+-export([connect_link/1
          ,init/1
          ,wake/0]).
 
-connect(Options) ->
+connect_link(Options) when is_list(Options) ->
     proc_lib:start_link(?MODULE, init, [[self(), Options]]).
 
 init([Parent,Options]) ->
