@@ -71,7 +71,7 @@ Use
 Currently the API is extremely basic and only allows you to retreive
 connection PIDs to use with the driver backend.::
 
-  14> ConnectionPid = edbi:connection(PoolName),
-  14> pgsql:squery(ConnectionPid, "select 1").  
+  1> ConnectionPid = edbi:connection(PoolName),
+  1> pgsql:squery(ConnectionPid, "select 1").  
   {ok,[{"SELECT",[{"?column?",text,0,23,4,-1,0}],[["1"]]}]}
 
