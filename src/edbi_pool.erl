@@ -2,7 +2,7 @@
 %% @copyright Geoff Cant
 %% @author Geoff Cant <nem@erlang.geek.nz>
 %% @version {@vsn}, {@date} {@time}
-%% @doc 
+%% @doc A database connection pool.
 %% @end
 %%%-------------------------------------------------------------------
 -module(edbi_pool).
