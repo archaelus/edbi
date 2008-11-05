@@ -1,78 +1,29 @@
-APP_NAME=skel
-VSN=0.1
-APP_DEPS="sasl"
+VSN          := 0.1
+ERL          ?= erl
+EBIN_DIRS    := $(wildcard lib/*/ebin)
+APP          := edbi
 
-include Makefile.local
+all: erl ebin/$(APP).app
 
-ERL_FILES ?=$(wildcard src/*.erl)
-HRL_FILES ?=$(wildcard include/*.hrl)
-BEAM_FILES ?=$(subst src/,ebin/,$(subst .erl,.beam,${ERL_FILES}))
-MODULES ?=$(subst src/,,$(subst .erl,,${ERL_FILES}))
-D_INC_DIRS=$(subst lib/, -I lib/,$(wildcard lib/*/include))
-D_EBIN_DIRS=$(subst lib/, -pa lib/,$(wildcard lib/*/ebin))
+erl: ebin lib
+	@$(ERL) -pa $(EBIN_DIRS) -noinput +B \
+	  -eval 'case make:all() of up_to_date -> halt(0); error -> halt(1) end.'
 
-INCLUDE ?=-I ${ERLANG_ROOT}/lib/stdlib-*/include ${D_INC_DIRS} -I ${EUNIT_ROOT}/include -I include/
-CODEPATH ?=-pz lib/*/ebin/ -pz ebin/ -pz ${EUNIT_ROOT}/ebin/
-CODEPATH_JUNGERL ?=-pz ${JUNGERL_ROOT}/lib/*/ebin/
+docs:
+	@erl -noshell -run edoc_run application '$(APP)' '"."' '[]'
 
-ERLC_CODEPATH ?=${D_EBIN_DIRS} -pz ${EUNIT_ROOT}/ebin -pz ebin
-ERLC_CODEPATH_JUNGERL ?=-pz "${JUNGERL_ROOT}/lib/*/ebin/"
-ERLC_FLAGS ?=+debug_info -W -o ebin/
+clean: 
+	@echo "removing:"
+	@rm -fv ebin/*.beam ebin/*.app
 
-EXTRA_DIALYZER_BEAM_FILES ?=$(wildcard lib/oserl*/ebin/*.beam lib/common_lib*/ebin/*.beam lib/proc_reg*/ebin/*.beam)
-
-NODE ?=-name ${APP_NAME}@127.0.0.1
-
-all: ebin ${BEAM_FILES} src/TAGS
-
-release: ${BEAM_FILES} test xref dialyzer.report docs releases/${VSN}/${APP_NAME}.tar.gz
-
-.PHONY: info clean docs test xref shell dialyzer.report release shell_args shell_boot kannel kannel2 smppsim makelibs
-
-info:
-	@echo Erlang root: +${ERLANG_ROOT}+
-	@echo Eunit root: +${EUNIT_ROOT}+
-	@echo Jungerl root: +${JUNGERL_ROOT}+
-	@echo Beam dirs: ${D_EBIN_DIRS}
-	@echo Extra dialyzer beam files: ${EXTRA_DIALYZER_BEAM_FILES}
-
-clean:
-	@rm -f ebin/*.beam priv/sasl/* priv/sasl.log priv/yaws/logs/*.{log,old,access}
-	@find src/ priv/ -iname \*~ | xargs rm -v
+ebin/$(APP).app: src/$(APP).app
+	@cp -v src/$(APP).app $@
 
 ebin:
-	[ ! -d ebin ] && mkdir ebin
+	@mkdir ebin
 
-ebin/%.beam: src/%.erl ${HRL_FILES}
-	@echo $@: erlc ${ERLC_FLAGS} ${ERLC_CODEPATH} ${ERLC_CODEPATH_JUNGERL} ${INCLUDE} $<
-	@erlc ${ERLC_FLAGS} ${ERLC_CODEPATH} ${ERLC_CODEPATH_JUNGERL} ${INCLUDE} $<
+lib:
+	@mkdir lib
 
-docs: ${ERL_FILES}
-	erl -noshell -run edoc_run application "'$(APP_NAME)'" '"."' '[{def,{vsn,"$(VSN)"}}]'
-
-test: ${BEAM_FILES}
-	erl $(CODEPATH) $(CODEPATH_JUNGERL) -config priv/${APP_NAME} -eval "lists:map(fun(A) -> {A,application:start(A)} end, [${APP_DEPS}]), application:load(${APP_NAME}), lists:foreach(fun (M) -> io:fwrite(\"Testing ~p:~n\", [M]), eunit:test(M) end, [`perl -e 'print join(",", qw(${MODULES}));'`])." -s init stop -noshell
-
-xref: ${BEAM_FILES}
-	erl $(CODEPATH) $(CODEPATH_JUNGERL) -eval "xref:start(${APP_NAME}), io:fwrite(\"~n~nXref: ~p~n~n\", [xref:d(\"ebin/\")])." -s init stop -noshell
-
-src/TAGS: ${BEAM_FILES}
-	erl $(CODEPATH) $(CODEPATH_JUNGERL) -eval "tags:dir(\"src/\", [{outdir, \"src/\"}])." -s init stop -noshell
-
-shell_args:
-	@(echo -ne "rr(\"include/*\").\nlists:map(fun(A) -> {A,application:start(A)} end, [${APP_DEPS}]).\napplication:start(${APP_NAME})." | pbcopy)
-
-shell: ${BEAM_FILES}
-	erl +K true -smp +A 10 ${NODE} -config priv/${APP_NAME} $(CODEPATH) $(CODEPATH_JUNGERL)
-
-shell_boot: ${BEAM_FILES}
-	erl ${NODE} -config priv/${APP_NAME} $(CODEPATH) $(CODEPATH_JUNGERL) -boot releases/${VSN}/${APP_NAME}
-
-dialyzer.report: ${BEAM_FILES}
-	@(dialyzer --verbose --succ_typings ${INCLUDE} ${D_EBIN_DIRS} -c ${BEAM_FILES} ${EXTRA_DIALYZER_BEAM_FILES}; if [ $$? != 1 ]; then true; else false; fi)
-
-releases/${VSN}/${APP_NAME}.boot: ${BEAM_FILES} releases/${VSN}/${APP_NAME}.rel ebin/${APP_NAME}.app priv/${APP_NAME}.config
-	erl $(CODEPATH) -eval 'systools:make_script("releases/${VSN}/${APP_NAME}").' -s init stop -noshell
-
-releases/${VSN}/${APP_NAME}.tar.gz: releases/${VSN}/${APP_NAME}.boot docs
-	erl $(CODEPATH) -eval 'systools:make_tar("releases/${VSN}/${APP_NAME}", [{path, ["lib/*/ebin"]},{dirs,[include,src]}]).' -s init stop -noshell
+dialyzer: erl
+	@dialyzer -c ebin
