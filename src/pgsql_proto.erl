@@ -257,7 +257,7 @@ handle_call({prepare, {Name, Query}}, _From, State) ->
     send_message(Sock, parse, {Name, Query, []}),
     send_message(Sock, describe, {prepared_statement, Name}),
     send_message(Sock, sync, []),
-    {ok, State, ParamDesc, ResultDesc} = process_prepare({[], []}),
+    {ok, CurState, ParamDesc, ResultDesc} = process_prepare({[], []}),
     OidMap = State#state.oidmap,
     ParamTypes =
 	lists:map(fun (Oid) -> dict:fetch(Oid, OidMap) end, ParamDesc),
@@ -265,7 +265,7 @@ handle_call({prepare, {Name, Query}}, _From, State) ->
 					{ColName, dict:fetch(Oid, OidMap)}
 				end,
 				ResultDesc),
-    Reply = {ok, State, ParamTypes, ResultNameTypes},
+    Reply = {ok, CurState, ParamTypes, ResultNameTypes},
     {reply, Reply, State};
 
 %% Close a prepared statement.
