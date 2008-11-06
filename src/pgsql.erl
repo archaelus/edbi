@@ -90,11 +90,4 @@ unprepare(Db, Name) when is_atom(Name) ->
 %%% ResultSet = [Row]
 %%% Row = list()
 execute(Db, Name, Params) when is_atom(Name), is_list(Params) ->
-    Ref = make_ref(),
-    Db ! {execute, Ref, self(), {atom_to_list(Name), Params}},
-    receive
-	{pgsql, Ref, Result} ->
-	    {ok, Result}
-    after 5000 ->
-	    timeout
-    end.
+    gen_server:call(Db,{execute, {atom_to_list(Name), Params}}).
