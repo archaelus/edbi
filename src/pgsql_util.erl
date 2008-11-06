@@ -166,11 +166,11 @@ coldescs(Bin, Descs) ->
 	    TableOID},
     coldescs(Rest, [Desc|Descs]).
 
-datacoldescs(N, 
-	     <<Len:32/integer, Data:Len/binary, Rest/binary>>, 
-	     Descs) when N >= 0 ->
+datacoldescs(N, <<Len:32/integer, Data:Len/binary, Rest/binary>>, Descs) when N >= 0 ->
     datacoldescs(N-1, Rest, [Data|Descs]);
-datacoldescs(_N, _, Descs) ->
+datacoldescs(N, <<255,255,255,255, Rest/binary>>, Descs) ->
+    datacoldescs(N-1, Rest, [null|Descs]);
+datacoldescs(_N, _Data, Descs) ->
     lists:reverse(Descs).
 
 decode_descs(OidMap, Cols) ->
@@ -190,13 +190,21 @@ decode_row([Type|TypeTail], [Value|ValueTail], Out0) ->
     Out1 = decode_col(Type, Value),
     decode_row(TypeTail, ValueTail, [Out1|Out0]).
 
+decode_col({_, text, _, _, _, _, _}, null) ->
+    null;
 decode_col({_, text, _, _, _, _, _}, Value) ->
     binary_to_list(Value);
+decode_col({_Name, _Format, _ColNumber, varchar, _Size, _Modifier, _TableOID}, null) ->
+    null;
 decode_col({_Name, _Format, _ColNumber, varchar, _Size, _Modifier, _TableOID}, Value) ->
     binary_to_list(Value);
+decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, null) ->
+    null;
 decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, Value) ->
     <<Int4:32/integer>> = Value,
     Int4;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, null) ->
+    {Oid, null};
 decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) ->
     {Oid, Value}.
 
