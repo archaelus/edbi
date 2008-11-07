@@ -15,7 +15,7 @@
 	 pquery/3, 
 	 terminate/1, 
 	 prepare/3, unprepare/2, 
-	 execute/3]).
+	 execute/3, execute/4]).
 
 
 connect(Host, Database, User, Password) ->
@@ -91,3 +91,14 @@ unprepare(Db, Name) when is_atom(Name) ->
 %%% Row = list()
 execute(Db, Name, Params) when is_atom(Name), is_list(Params) ->
     gen_server:call(Db,{execute, {atom_to_list(Name), Params}}).
+
+%%% execute(Db, Name, Params, Timeout) -> {ok, Result} | timeout | ...
+%%% Result = {'INSERT', NRows} |
+%%%          {'DELETE', NRows} |
+%%%          {'SELECT', ResultSet} |
+%%%          ...
+%%% ResultSet = [Row]
+%%% Row = list()
+%%% Timeout = integer() | infinity
+execute(Db, Name, Params, Timeout) when is_atom(Name), is_list(Params) ->
+    gen_server:call(Db,{execute, {atom_to_list(Name), Params}}, Timeout).
