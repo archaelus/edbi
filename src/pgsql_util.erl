@@ -206,8 +206,10 @@ decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value
     <<Int64:64/integer-signed>> = Value, Int64;
 decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == serial8; Oid == bigserial ->
     <<Int64:64/integer-unsigned>> = Value, Int64;
-decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, null) ->
-    {Oid, null};
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, <<0>>) when Oid == boolean; Oid == bool ->
+    false;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, <<1>>) when Oid == boolean; Oid == bool ->
+    true;
 decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) ->
     {Oid, Value}.
 
