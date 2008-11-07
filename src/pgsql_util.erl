@@ -201,7 +201,7 @@ decode_col({_Name, _Format, _ColNumber, varchar, _Size, _Modifier, _TableOID}, V
 decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, null) ->
     null;
 decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, Value) ->
-    <<Int4:32/integer>> = Value,
+    <<Int4:32/integer-signed>> = Value,
     Int4;
 decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, null) ->
     {Oid, null};
