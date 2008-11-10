@@ -12,8 +12,7 @@
 %% API
 -export([start_link/1
          ,start_pool/2
-         ,pool/1
-         ,connection/1]).
+        ]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -37,23 +36,6 @@ start_pool(Id, Args) ->
              transient,2000,worker,
              [edbi_pool]},
     supervisor:start_child(?SERVER, CSpec).
-
-pool(Id) ->
-    case lists:keysearch(Id, 1, supervisor:which_children(?SERVER)) of
-        false ->
-            {error, {no_such_pool, Id}};
-        {value, {_Id, Pid, _, _}} when is_pid(Pid) ->
-            {ok, Pid};
-        _ ->
-            {error, {not_running, Id}}
-    end.
-
-connection({ok, Pid}) ->
-    edbi_pool:connection(Pid);
-connection({error, E}) ->
-    {error, E};
-connection(Pool) ->
-    connection(pool(Pool)).
 
 %%====================================================================
 %% Supervisor callbacks
