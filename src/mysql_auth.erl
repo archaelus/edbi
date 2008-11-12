@@ -184,6 +184,7 @@ password_new(Password, Salt) ->
 
 
 do_send(Sock, Packet, Num, LogFun) ->
-    mysql:log(LogFun, debug, "mysql_auth send packet ~p: ~p", [Num, Packet]),
+    LogFun(?MODULE, ?LINE, debug,
+	   fun() -> {"mysql_auth send packet ~p: ~p", [Num, Packet]} end),
     Data = <<(size(Packet)):24/little, Num:8, Packet/binary>>,
     gen_tcp:send(Sock, Data).
