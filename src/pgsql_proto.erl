@@ -292,8 +292,7 @@ handle_call({execute, {Name, Params}}, _From, State) ->
 	{pgsql, {bind_complete, _}} -> % Bind reply first.
 	    %% Collect response to describe message,
 	    %% which gives a hint of the rest of the messages.
-	    {ok, Command, Result} = process_execute(State, Sock),
-
+	    {ok, Command, Result, NewState} = process_execute(State, Sock),
 	    begin % Close portal and end extended query.
 		CloseP = encode_message(close, {portal, ""}),
 		SyncP  = encode_message(sync, []),
@@ -308,12 +307,12 @@ handle_call({execute, {Name, Params}}, _From, State) ->
 			    %%io:format("execute: ~p ~p ~p~n",
 			    %%	      [Status, Command, Result]),
 			    Reply = {ok, {Command, Result}},
-			    {reply, Reply, State};
+			    {reply, Reply, NewState};
 			{pgsql, Unknown} ->
-			    {stop, Unknown, {error, Unknown}, State}
+			    {stop, Unknown, {error, Unknown}, NewState}
 		    end;
 		{pgsql, Unknown} ->
-		    {stop, Unknown, {error, Unknown}, State}
+		    {stop, Unknown, {error, Unknown}, NewState}
 	    end;
 	{pgsql, Unknown} ->
 	    {stop, Unknown, {error, Unknown}, State}
@@ -436,37 +435,54 @@ process_execute(State, Sock) ->
     %% where Result = {Command, ...}
     receive
 	{pgsql, {no_data, _}} ->
-	    {ok, _Command, _Result} = process_execute_nodata();
+	    {ok, _Command, _Result, _NewState} = process_execute_nodata(State);
 	{pgsql, {row_description, Descs}} ->
 	    OidMap = State#state.oidmap,
 	    {ok, Types} = pgsql_util:decode_descs(OidMap, Descs),
-	    {ok, _Command, _Result} =
-		process_execute_resultset(Sock, Types, []);
+	    {ok, Command, Result} = process_execute_resultset(Sock, Types, []),
+	    {ok, Command, Result, State};	    
 	{pgsql, Unknown} ->
 	    exit(Unknown)
     end.
 
-process_execute_nodata() ->
+process_execute_nodata(State) ->
     receive
 	{pgsql, {command_complete, Command}} ->
 	    case Command of
 		"INSERT "++Rest ->
 		    {ok, [{integer, _, _Table},
 			  {integer, _, NRows}], _} = erl_scan:string(Rest),
-		    {ok, 'INSERT', NRows};
+		    {ok, 'INSERT', NRows, State};
+		"UPDATE "++Rest ->
+		    {ok, [{integer, _, NRows}], _} = erl_scan:string(Rest),
+		    {ok, 'UPDATE', NRows, State};
 		"SELECT" ->
-		    {ok, 'SELECT', should_not_happen};
+		    {ok, 'SELECT', should_not_happen, State};
 		"DELETE "++Rest ->
 		    {ok, [{integer, _, NRows}], _} =
 			erl_scan:string(Rest),
-		    {ok, 'DELETE', NRows};
+		    {ok, 'DELETE', NRows, State};
 		Any ->
-		    {ok, nyi, Any}
+		    {ok, nyi, Any, State}
 	    end;
-
+  {pgsql, {parameter_status, {ParameterName, ParameterValue}}} ->
+    % update parameter
+    NewState = case lists:keysearch({parameter, ParameterName}, 1, State#state.params) of
+      {value, {{parameter, ParameterName}, OldParameterValue}} when OldParameterValue == ParameterValue ->
+        % parameter already exists and has not changed
+        State;
+      {value, {{parameter, ParameterName}, _OldParameterValue}} ->
+        % parameter already exists, so update the value
+        State#state { params = lists:keyreplace({parameter, ParameterName}, 1, State#state.params, {{parameter, ParameterName}, ParameterValue}) };
+      false ->
+        % new parameter, so append to list of parameters
+        State#state { params = [{{parameter, ParameterName}, ParameterValue} | State#state.params]}
+    end,
+    {ok, parameter_status, {{parameter, ParameterName}, ParameterValue}, NewState};
 	{pgsql, Unknown} ->
 	    exit(Unknown)
     end.
+    
 process_execute_resultset(Sock, Types, Log) ->
     receive
 	{pgsql, {command_complete, Command}} ->
