@@ -279,45 +279,52 @@ handle_call({unprepare, Name}, _From, State) ->
 
 %% Execute a prepared statement
 handle_call({execute, {Name, Params}}, _From, State) ->
-    Sock = State#state.socket,
-    %%io:format("execute: ~p ~p ~n", [Name, Params]),
-    begin % Issue first requests for the prepared statement.
-	BindP     = encode_message(bind, {"", Name, Params, [binary]}),
-	DescribeP = encode_message(describe, {portal, ""}),
-	ExecuteP  = encode_message(execute, {"", 0}),
-	FlushP    = encode_message(flush, []),
-	ok = send(Sock, [BindP, DescribeP, ExecuteP, FlushP])
-    end,
-    receive
-	{pgsql, {bind_complete, _}} -> % Bind reply first.
-	    %% Collect response to describe message,
-	    %% which gives a hint of the rest of the messages.
-	    {ok, Command, Result} = process_execute(State, Sock),
-
-	    begin % Close portal and end extended query.
-		CloseP = encode_message(close, {portal, ""}),
-		SyncP  = encode_message(sync, []),
-		ok = send(Sock, [CloseP, SyncP])
-	    end,
-	    receive
-		%% Collect response to close message.
-		{pgsql, {close_complete, _}} ->
-		    receive
-			%% Collect response to sync message.
-			{pgsql, {ready_for_query, _Status}} ->
-			    %%io:format("execute: ~p ~p ~p~n",
-			    %%	      [Status, Command, Result]),
-			    Reply = {ok, {Command, Result}},
-			    {reply, Reply, State};
-			{pgsql, Unknown} ->
-			    {stop, Unknown, {error, Unknown}, State}
-		    end;
-		{pgsql, Unknown} ->
-		    {stop, Unknown, {error, Unknown}, State}
-	    end;
-	{pgsql, Unknown} ->
-	    {stop, Unknown, {error, Unknown}, State}
-    end;
+  Sock = State#state.socket,
+  %%io:format("execute: ~p ~p ~n", [Name, Params]),
+  begin % Issue first requests for the prepared statement.
+    BindP     = encode_message(bind, {"", Name, Params, [binary]}),
+    DescribeP = encode_message(describe, {portal, ""}),
+    ExecuteP  = encode_message(execute, {"", 0}),
+    FlushP    = encode_message(flush, []),
+    ok = send(Sock, [BindP, DescribeP, ExecuteP, FlushP])
+  end,
+  receive
+    {pgsql, {bind_complete, _}} -> % Bind reply first.
+      %% Collect response to describe message,
+      %% which gives a hint of the rest of the messages.
+      {ok, Command, Result, NewState} = process_execute(State, Sock),
+      begin % Close portal and end extended query.
+        CloseP = encode_message(close, {portal, ""}),
+        SyncP  = encode_message(sync, []),
+        ok = send(Sock, [CloseP, SyncP])
+      end,
+      receive
+        %% Collect response to close message.
+        {pgsql, {close_complete, _}} ->
+          receive
+            %% Collect response to sync message.
+            {pgsql, {ready_for_query, _Status}} ->
+              %%io:format("execute: ~p ~p ~p~n",
+              %%	      [Status, Command, Result]),
+              {reply, {ok, {Command, Result}}, NewState};
+            {pgsql, {parameter_status, {Key, Value}}} ->
+              NewStateWithUpdatesParameter = update_parameter(Key, Value, NewState),
+              receive
+                %% Collect response to sync message.
+                {pgsql, {ready_for_query, _Status}} ->
+                  {reply, {ok, {Command, Result}}, NewStateWithUpdatesParameter};
+                {pgsql, Unknown} ->
+                  {stop, Unknown, {error, Unknown}, NewState}
+              end;
+            {pgsql, Unknown} ->
+              {stop, Unknown, {error, Unknown}, NewState}
+          end;
+        {pgsql, Unknown} ->
+          {stop, Unknown, {error, Unknown}, NewState}
+      end;
+    {pgsql, Unknown} ->
+      {stop, Unknown, {error, Unknown}, State}
+  end;
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -414,8 +421,7 @@ process_prepare(Info={ParamDesc, ResultDesc}) ->
 	    process_prepare({ParamDesc, Desc});
 	{pgsql, {ready_for_query, Status}} ->
 	    {ok, Status, ParamDesc, ResultDesc};
-	{pgsql, Any} ->
-	    io:format("process_prepare: ~p~n", [Any]),
+	{pgsql, _Any} ->
 	    process_prepare(Info)
     end.
 
@@ -425,8 +431,7 @@ process_unprepare() ->
 	    {ok, Status};
 	{pgsql, {close_complate, []}} ->
 	    process_unprepare();
-	{pgsql, Any} ->
-	    io:format("process_unprepare: ~p~n", [Any]),
+	{pgsql, _Any} ->
 	    process_unprepare()
     end.
 
@@ -436,37 +441,57 @@ process_execute(State, Sock) ->
     %% where Result = {Command, ...}
     receive
 	{pgsql, {no_data, _}} ->
-	    {ok, _Command, _Result} = process_execute_nodata();
+	    {ok, _Command, _Result, _NewState} = process_execute_nodata(State);
 	{pgsql, {row_description, Descs}} ->
 	    OidMap = State#state.oidmap,
 	    {ok, Types} = pgsql_util:decode_descs(OidMap, Descs),
-	    {ok, _Command, _Result} =
-		process_execute_resultset(Sock, Types, []);
+	    {ok, Command, Result} = process_execute_resultset(Sock, Types, []),
+	    {ok, Command, Result, State};	 
 	{pgsql, Unknown} ->
 	    exit(Unknown)
     end.
 
-process_execute_nodata() ->
+process_execute_nodata(State) ->
     receive
 	{pgsql, {command_complete, Command}} ->
 	    case Command of
 		"INSERT "++Rest ->
 		    {ok, [{integer, _, _Table},
 			  {integer, _, NRows}], _} = erl_scan:string(Rest),
-		    {ok, 'INSERT', NRows};
+		    {ok, 'INSERT', NRows, State};
+		"UPDATE "++Rest ->
+		    {ok, [{integer, _, NRows}], _} = erl_scan:string(Rest),
+		    {ok, 'UPDATE', NRows, State};
 		"SELECT" ->
-		    {ok, 'SELECT', should_not_happen};
+		    {ok, 'SELECT', should_not_happen, State};
 		"DELETE "++Rest ->
 		    {ok, [{integer, _, NRows}], _} =
 			erl_scan:string(Rest),
-		    {ok, 'DELETE', NRows};
+		    {ok, 'DELETE', NRows, State};
 		Any ->
-		    {ok, nyi, Any}
+		    {ok, nyi, Any, State}
 	    end;
-
+  {pgsql, {parameter_status, {Key, Value}}} ->
+    % update parameter
+    NewState = update_parameter(Key, Value, State),
+    process_execute_nodata(NewState);
 	{pgsql, Unknown} ->
 	    exit(Unknown)
     end.
+    
+update_parameter(Key, Value, State) ->
+  _NewState = case lists:keysearch({parameter, Key}, 1, State#state.params) of
+    {value, {{parameter, Key}, OldValue}} when OldValue == Value ->
+      % parameter already exists and has not changed
+      State;
+    {value, {{parameter, Key}, _OldValue}} ->
+      % parameter already exists, so update the value
+      State#state { params = lists:keyreplace({parameter, Key}, 1, State#state.params, {{parameter, Key}, Value}) };
+    false ->
+      % new parameter, so append to list of parameters
+      State#state { params = [{{parameter, Key}, Value} | State#state.params]}
+  end.
+    
 process_execute_resultset(Sock, Types, Log) ->
     receive
 	{pgsql, {command_complete, Command}} ->

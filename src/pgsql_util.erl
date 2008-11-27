@@ -190,21 +190,26 @@ decode_row([Type|TypeTail], [Value|ValueTail], Out0) ->
     Out1 = decode_col(Type, Value),
     decode_row(TypeTail, ValueTail, [Out1|Out0]).
 
-decode_col({_, text, _, _, _, _, _}, null) ->
+decode_col({_, _, _, _, _, _, _}, null) ->
     null;
 decode_col({_, text, _, _, _, _, _}, Value) ->
     binary_to_list(Value);
-decode_col({_Name, _Format, _ColNumber, varchar, _Size, _Modifier, _TableOID}, null) ->
-    null;
 decode_col({_Name, _Format, _ColNumber, varchar, _Size, _Modifier, _TableOID}, Value) ->
     binary_to_list(Value);
-decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, null) ->
-    null;
-decode_col({_Name, _Format, _ColNumber, int4, _Size, _Modifier, _TableOID}, Value) ->
-    <<Int4:32/integer>> = Value,
-    Int4;
-decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, null) ->
-    {Oid, null};
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == int2; Oid == smallint ->
+    <<Int2:16/integer-signed>> = Value,  Int2;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == int; Oid == int4; Oid == integer ->
+    <<Int4:32/integer-signed>> = Value, Int4;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == serial4; Oid == serial ->
+    <<Int4:32/integer-unsigned>> = Value, Int4;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == int8; Oid == bigint ->
+    <<Int64:64/integer-signed>> = Value, Int64;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) when Oid == serial8; Oid == bigserial ->
+    <<Int64:64/integer-unsigned>> = Value, Int64;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, <<0>>) when Oid == boolean; Oid == bool ->
+    false;
+decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, <<1>>) when Oid == boolean; Oid == bool ->
+    true;
 decode_col({_Name, _Format, _ColNumber, Oid, _Size, _Modifier, _TableOID}, Value) ->
     {Oid, Value}.
 
