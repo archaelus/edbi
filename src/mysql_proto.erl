@@ -25,7 +25,7 @@
 %%====================================================================
 
 decode(Type, <<Length:24/little, SeqNo:8/little, Packet:Length/binary, Rest/binary>>) ->
-    {packet, SeqNo, decode_packet(Type, [], Packet), Rest};
+    {packet, SeqNo, decode_packet(Type, Packet), Rest};
 decode(_Type, Rest) ->
     {incomplete, Rest}.
 
@@ -87,7 +87,7 @@ encode_packet(Seq, Bin) when is_binary(Bin) ->
 encode_command(com_quit, _) -> [];
 encode_command(com_sleep, _) -> [].
 
-decode_packet(server_handshake, Pkt, <<?MYSQL_VERSION_10, Rest/binary>>) ->
+decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
     case decode_nullterm_string(Rest) of
         {ServerVersion,
          <<ThreadId:32/little,
@@ -104,17 +104,17 @@ decode_packet(server_handshake, Pkt, <<?MYSQL_VERSION_10, Rest/binary>>) ->
               {scramble_buff, iolist_to_binary([Scramble1, Scramble2])},
               {server_capabilities, Capabilities},
               {language, Lang},
-              {server_status, Status} | Pkt]}
+              {server_status, Status}]}
     end;
-decode_packet(client_handshake, Pkt,
+decode_packet(client_handshake,
               <<ClientFlags:32/little,
                MaxPktSize:32/little,
                CharsetNo:8/little,
                _Filler:23/binary,
                Rest1/binary>>) ->
-    Opts = Pkt ++ [{client_flags, ClientFlags},
-                   {max_packet_size, MaxPktSize},
-                   {charset_no, CharsetNo}],
+    Opts = [{client_flags, ClientFlags},
+            {max_packet_size, MaxPktSize},
+            {charset_no, CharsetNo}],
     case decode_nullterm_string(Rest1) of
         {UserName, <<>>} ->
             {client_handshake,
@@ -135,10 +135,10 @@ decode_packet(client_handshake, Pkt,
                     end
             end
     end;
-decode_packet(command, Pkt, <<Code:8/little, Rest/binary>>) ->
+decode_packet(command, <<Code:8/little, Rest/binary>>) ->
     Command = mysql_proto_constants:command(Code),
     {command, Command,
-     Pkt ++ decode_command(Command, Rest)}.
+     decode_command(Command, Rest)}.
 
 decode_command(com_quit, <<>>) -> [];
 decode_command(com_sleep, <<>>) -> [].
