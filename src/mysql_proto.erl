@@ -202,6 +202,9 @@ example_client_handshake() ->
      250,250,28,1,178,179,188,240,224,6,40,213,32,38,142,14,
      69,236,160,21>>.
 
+example_ok_packet() ->
+    <<7,0,0,2,0,0,0,2,0,0,0>>.
+
 scramble_test() ->
     Bytes = example_scrambled_pass(),
     ?assertMatch(Bytes,
