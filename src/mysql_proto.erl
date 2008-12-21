@@ -47,12 +47,17 @@ encode({client_handshake, Values}) ->
      <<(proplists:get_value(charset_no,Values)):8/little>>,
      << 0:(8*23) >>,
      encode_nullterm_string(proplists:get_value(username,Values)),
-     encode_lcb(proplists:get_value(scrambled_pass,Values))
-     |
+     case proplists:get_value(scrambled_pass,Values) of
+         undefined -> [];
+         V -> encode_lcb(V)
+     end,
      case proplists:get_value(dbname,Values) of
          undefined -> [];
          V -> [0, encode_nullterm_string(V)]
-     end].
+     end];
+encode({command, Code, Options}) ->
+    [mysql_proto_constants:command_code(Code)
+     |encode_command(Code, Options)].
 
 client_handshake(Username, Password, Options) when is_list(Username) ->
     client_handshake(iolist_to_binary(Username), Password, Options);
@@ -79,6 +84,8 @@ encode_packet(Seq, Bin) when is_binary(Bin) ->
 %% Internal functions
 %%====================================================================
 
+encode_command(com_quit, _) -> [];
+encode_command(com_sleep, _) -> [].
 
 decode_packet(server_handshake, Pkt, <<?MYSQL_VERSION_10, Rest/binary>>) ->
     case decode_nullterm_string(Rest) of
@@ -127,7 +134,14 @@ decode_packet(client_handshake, Pkt,
                                       {db_name, DbName}]}
                     end
             end
-    end.                   
+    end;
+decode_packet(command, Pkt, <<Code:8/little, Rest/binary>>) ->
+    Command = mysql_proto_constants:command(Code),
+    {command, Command,
+     Pkt ++ decode_command(Command, Rest)}.
+
+decode_command(com_quit, <<>>) -> [];
+decode_command(com_sleep, <<>>) -> [].
 
 decode_nullterm_string(Bin) ->
     decode_nullterm_string(Bin, 1).
@@ -233,3 +247,12 @@ lcb_test() ->
                   end,
                   [1,2,249,250,251,65534,65535,65536]).
                    %%,16777215,16777216,16777217]).
+
+simple_command_test() ->
+    lists:foreach(fun (Cmd) ->
+                          CmdT = {command, Cmd, []},
+                          Bytes = encode_packet(0, encode(CmdT)),
+                          ?assertMatch({packet, 0, CmdT, <<>>},
+                                       decode(command, Bytes))
+                  end,
+                  [com_quit, com_sleep]).
