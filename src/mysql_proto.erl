@@ -138,7 +138,22 @@ decode_packet(client_handshake,
 decode_packet(command, <<Code:8/little, Rest/binary>>) ->
     Command = mysql_proto_constants:command(Code),
     {command, Command,
-     decode_command(Command, Rest)}.
+     decode_command(Command, Rest)};
+decode_packet(response, <<16#ff, ErrNo:16/little, $\#, SqlState:5/binary, Message/binary>>) ->
+    {response, {error, mysql_proto_constants:error(ErrNo), SqlState, Message}};
+decode_packet(response, <<16#ff, ErrNo:16/little, Message/binary>>) ->
+    {response, {error, mysql_proto_constants:error(ErrNo), no_sqlstate, Message}};
+decode_packet(response, <<0, Rest1/binary>>) ->
+    {AffectedRows, Rest2} = decode_fle(Rest1),
+    %% This is mysql4.1, decode 4.0?
+    {InsertId, <<ServerStatus:16/little,
+                Warnings:16/little,
+                Message/binary>>} = decode_fle(Rest2),
+    {response, ok, [{affected_rows, AffectedRows},
+                    {insert_id, InsertId},
+                    {server_status, ServerStatus},
+                    {warning_count, Warnings},
+                    {message, Message}]}.
 
 decode_command(com_quit, <<>>) -> [];
 decode_command(com_sleep, <<>>) -> [].
@@ -169,16 +184,34 @@ encode_lcb(Bin) when byte_size(Bin) =< 16777215 ->
 encode_lcb(Bin) when byte_size(Bin) > 16777215 ->
     <<254:8/little, (byte_size(Bin)):64/little, Bin/binary>>.
 
-decode_lcb(<<251:8/little, Rest/binary>>) ->
-    {null, Rest};
 decode_lcb(<<Len:8/little, Data:Len/binary, Rest/binary>>) when Len =< 250 ->
     {Data, Rest};
+decode_lcb(<<251:8/little, Rest/binary>>) ->
+    {null, Rest};
 decode_lcb(<<252, Len:16/little, Data:Len/binary, Rest/binary>>) when Len =< 65535 ->
     {Data, Rest};
 decode_lcb(<<253, Len:24/little, Data:Len/binary, Rest/binary>>) when Len =< 16777215 ->
     {Data, Rest};
 decode_lcb(<<254, Len:64/little, Data:Len/binary, Rest/binary>>) when Len > 16777215 ->
     {Data, Rest}.
+
+encode_fle(Int) when Int =< 250 ->
+    <<Int:8/little>>;
+encode_fle(Int) when Int =< 65535 ->
+    <<252, Int:16/little>>;
+encode_fle(Int) when Int =< 16777215 ->
+    <<253, Int:24/little>>;
+encode_fle(Int) when Int > 16777215 ->
+    <<254, Int:64/little>>.
+
+decode_fle(<<Int:8/little, Rest/binary>>) when Int =< 250 ->
+    {Int, Rest};
+decode_fle(<<252, Int:16/little, Rest/binary>>) ->
+    {Int, Rest};
+decode_fle(<<253, Int:24/little, Rest/binary>>) ->
+    {Int, Rest};
+decode_fle(<<254, Int:64/little, Rest/binary>>) ->
+    {Int, Rest}.
 
 scramble_password(<<ScrambleBuff:20/binary, 0>>, Password) when is_binary(Password) ->
     Stage1 = crypto:sha(Password),
@@ -247,6 +280,14 @@ lcb_test() ->
                   end,
                   [1,2,249,250,251,65534,65535,65536]).
                    %%,16777215,16777216,16777217]).
+
+lfe_test() ->
+    lists:foreach(fun (Int) ->
+                          Enc = encode_fle(Int),
+                          ?assertMatch({Int, <<>>}, decode_fle(Enc))
+                  end,
+                  [1,2,249,250,251,65534,65535,65536
+                   ,16777215,16777216,16777217]).
 
 simple_command_test() ->
     lists:foreach(fun (Cmd) ->
