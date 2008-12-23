@@ -323,30 +323,30 @@ server_handshake_test() ->
     {packet, 0, Pkt, <<>>} = decode(server_handshake, example_mysql_server_handshake()),
     ?assertMatch(Bytes, encode_packet(0,encode(Pkt))).
 
-lcb_test() ->
+lcb_test_() ->
     crypto:start(),
-    lists:foreach(fun (Len) ->
-                          Bytes = crypto:rand_bytes(Len),
-                          Enc = encode_lcb(Bytes),
-                          ?assertMatch({Bytes, <<>>}, decode_lcb(Enc))
-                  end,
+    lists:map(fun (Len) ->
+                      Bytes = crypto:rand_bytes(Len),
+                      Enc = encode_lcb(Bytes),
+                      ?_assertMatch({Bytes, <<>>}, decode_lcb(Enc))
+              end,
                   [1,2,249,250,251,65534,65535,65536]).
                    %%,16777215,16777216,16777217]).
 
-lfe_test() ->
-    lists:foreach(fun (Int) ->
-                          Enc = encode_fle(Int),
-                          ?assertMatch({Int, <<>>}, decode_fle(Enc))
-                  end,
-                  [1,2,249,250,251,65534,65535,65536
-                   ,16777215,16777216,16777217]).
+lfe_test_() ->
+    lists:map(fun (Int) ->
+                      Enc = encode_fle(Int),
+                      ?_assertMatch({Int, <<>>}, decode_fle(Enc))
+              end,
+              [1,2,249,250,251,65534,65535,65536
+               ,16777215,16777216,16777217]).
 
-simple_command_test() ->
-    lists:foreach(fun ({Cmd, Args}) ->
+simple_command_test_() ->
+    lists:map(fun ({Cmd, Args}) ->
                           CmdT = {command, Cmd, Args},
                           Bytes = encode_packet(0, encode(CmdT)),
-                          ?assertMatch({packet, 0, CmdT, <<>>},
-                                       decode(command, Bytes))
+                          ?_assertMatch({packet, 0, CmdT, <<>>},
+                                        decode(command, Bytes))
                   end,
                   [{sleep, []}, {quit, []},
                    {statistics, []}, {process_info, []},
@@ -355,13 +355,13 @@ simple_command_test() ->
                    {init_db, [{db_name, <<"proto">>}]}
                   ]).
 
-response_test() ->
-    lists:foreach(fun (Code) ->
-                          Resp = {response, {error, Code,
-                                             no_sqlstate,
-                                             iolist_to_binary("Error :" ++ atom_to_list(Code))}},
-                          Bytes = encode_packet(0, encode(Resp)),
-                          ?assertMatch({packet, 0, Resp, <<>>},
-                                       decode(response, Bytes))
-                  end,
-                  mysql_proto_constants:errors()).
+response_test_() ->
+    lists:map(fun (Code) ->
+                      Resp = {response, {error, Code,
+                                         no_sqlstate,
+                                         iolist_to_binary("Error :" ++ atom_to_list(Code))}},
+                      Bytes = encode_packet(0, encode(Resp)),
+                      ?_assertMatch({packet, 0, Resp, <<>>},
+                                    decode(response, Bytes))
+              end,
+              mysql_proto_constants:errors()).
