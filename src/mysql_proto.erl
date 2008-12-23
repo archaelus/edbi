@@ -63,7 +63,9 @@ encode({response, {error, Error, no_sqlstate, Message}}) when is_atom(Error) ->
       Message/binary>>];
 encode({response, {error, Error, SqlState, Message}}) when is_atom(Error) ->
     [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
-      $\$, SqlState:5/binary, Message/binary>>].
+      $\$, SqlState:5/binary, Message/binary>>];
+encode({result_set_header, FieldCount, Extra}) ->
+    [encode_fle(FieldCount), encode_fle(Extra)].
 
 client_handshake(Username, Password, Options) when is_list(Username) ->
     client_handshake(iolist_to_binary(Username), Password, Options);
@@ -182,10 +184,13 @@ decode_packet(command, <<Code:8/little, Rest/binary>>) ->
     Command = mysql_proto_constants:command(Code),
     {command, Command,
      decode_command(Command, Rest)};
-decode_packet(response, <<16#ff, ErrNo:16/little, $\#, SqlState:5/binary, Message/binary>>) ->
-    {response, {error, mysql_proto_constants:error(ErrNo), SqlState, Message}};
+decode_packet(response, <<16#ff, ErrNo:16/little, $\#,
+                         SqlState:5/binary, Message/binary>>) ->
+    {response, {error, mysql_proto_constants:error(ErrNo),
+                SqlState, Message}};
 decode_packet(response, <<16#ff, ErrNo:16/little, Message/binary>>) ->
-    {response, {error, mysql_proto_constants:error(ErrNo), no_sqlstate, Message}};
+    {response, {error, mysql_proto_constants:error(ErrNo),
+                no_sqlstate, Message}};
 decode_packet(response, <<0, Rest1/binary>>) ->
     {AffectedRows, Rest2} = decode_fle(Rest1),
     %% This is mysql4.1, decode 4.0?
@@ -196,7 +201,11 @@ decode_packet(response, <<0, Rest1/binary>>) ->
                     {insert_id, InsertId},
                     {server_status, ServerStatus},
                     {warning_count, Warnings},
-                    {message, Message}]}.
+                    {message, Message}]};
+decode_packet(result_set_header, Rest1) ->
+    {FieldCount,Rest2} = decode_fle(Rest1),
+    {Extra, <<>>} = decode_fle(Rest2),
+    {result_set_header, FieldCount, Extra}.
 
 decode_command(quit, <<>>) -> [];
 decode_command(sleep, <<>>) -> [];
@@ -365,3 +374,13 @@ response_test_() ->
                                     decode(response, Bytes))
               end,
               mysql_proto_constants:errors()).
+
+result_set_header_test_() ->
+    lists:map(fun ({Fields, Extra}) ->
+                      Resp = {result_set_header, Fields, Extra},
+                      Bytes = encode_packet(0, encode(Resp)),
+                      ?_assertMatch({packet, 0, Resp, <<>>},
+                                    decode(result_set_header, Bytes))
+              end,
+              [{A,B} || A <- lists:seq(1,10),
+                        B <- lists:seq(0,2) ]).
