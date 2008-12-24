@@ -26,6 +26,8 @@
 
 decode(Type, <<Length:24/little, SeqNo:8/little, Packet:Length/binary, Rest/binary>>) ->
     {packet, SeqNo, decode_packet(Type, Packet), Rest};
+decode(_Type, Buf = <<Length:24/little, _SeqNo:8/little, _/binary>>) ->
+    {incomplete, (Length + 4) - byte_size(Buf), Buf};
 decode(_Type, Rest) ->
     {incomplete, Rest}.
 
@@ -36,13 +38,13 @@ encode({server_handshake, Values}) ->
      <<(proplists:get_value(thread_id,Values)):32/little>>,
      Scramble1, 
      0,
-     proplists:get_value(server_capabilities,Values),
+     <<(mysql_proto_constants:capabilities(proplists:get_value(server_capabilities,Values))):16/little>>,
      <<(proplists:get_value(language,Values)):8/little>>,
      <<(proplists:get_value(server_status,Values)):16/little>>,
      << 0:(8*13) >>,
      Scramble2];
 encode({client_handshake, Values}) ->
-    [<<(proplists:get_value(client_flags,Values)):32/little>>,
+    [<<(mysql_proto_constants:capabilities(proplists:get_value(client_flags,Values))):32/little>>,
      <<(proplists:get_value(max_packet_size,Values)):32/little>>,
      <<(proplists:get_value(charset_no,Values)):8/little>>,
      << 0:(8*23) >>,
@@ -73,8 +75,13 @@ client_handshake(Username, Password, Options) when is_list(Password) ->
     client_handshake(Username, iolist_to_binary(Password), Options);
 client_handshake(Username, Password, Options) when is_binary(Username), is_binary(Password) ->
     ScrambleBuff = proplists:get_value(scramble_buff, Options),
+    Flags = proplists:get_value(client_flags, Options, [long_password,
+                                                        long_flags,
+                                                        protocol_41,
+                                                        transactions
+                                                       ]),
     {client_handshake,
-     [{client_flags, proplists:get_value(client_flags, Options, 41637)},
+     [{client_flags, Flags},
       {max_packet_size, proplists:get_value(max_packet_size, Options, ?MYSQL_16MEG_PKT)},
       {charset_no, proplists:get_value(charset_no, Options, ?MYSQL_DEFAULT_CHARSET)},
       {username, Username},
@@ -137,7 +144,7 @@ decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
         {ServerVersion,
          <<ThreadId:32/little,
           Scramble1:8/binary, 0,
-          Capabilities:16/bitstring,
+          Capabilities:16/little,
           Lang:8/little,
           Status:16/little,
           _Filler:13/binary,
@@ -147,9 +154,11 @@ decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
               {thread_id, ThreadId},
               {server_vsn, ServerVersion},
               {scramble_buff, iolist_to_binary([Scramble1, Scramble2])},
-              {server_capabilities, Capabilities},
+              {server_capabilities, mysql_proto_constants:client_flags(Capabilities)},
               {language, Lang},
-              {server_status, Status}]}
+              {server_status, Status}]};
+        Error ->
+            throw({decode_error, Error})
     end;
 decode_packet(client_handshake,
               <<ClientFlags:32/little,
@@ -157,7 +166,7 @@ decode_packet(client_handshake,
                CharsetNo:8/little,
                _Filler:23/binary,
                Rest1/binary>>) ->
-    Opts = [{client_flags, ClientFlags},
+    Opts = [{client_flags, mysql_proto_constants:client_flags(ClientFlags)},
             {max_packet_size, MaxPktSize},
             {charset_no, CharsetNo}],
     case decode_nullterm_string(Rest1) of
@@ -284,17 +293,27 @@ scramble_password(<<ScrambleBuff:20/binary, 0>>, Password) when is_binary(Passwo
 %%====================================================================
 
 test_client() ->
-    {ok, Sock} = gen_tcp:connect("192.168.0.17", 3306,
+    {ok, Sock} = gen_tcp:connect("192.168.0.10", 3306,
                                  [{active, false}, {packet, raw}, binary]),
     timer:sleep(100),
-    Rcv = gen_tcp:recv(Sock, 0),
+    {ok, Bytes} = gen_tcp:recv(Sock, 4),
+    Rcv = case decode(server_handshake, Bytes) of
+              {incomplete, N, Buf} ->
+                  {ok, Rest} = gen_tcp:recv(Sock, N),
+                  iolist_to_binary([Buf, Rest])
+          end,
     gen_tcp:close(Sock),
-    Rcv.
+    decode(server_handshake, Rcv).
 
 example_mysql_server_handshake() ->
     <<52,0,0,0,10,53,46,48,46,52,53,0,44,0,0,0,120,42,98,51,
      116,111,83,49,0,44,162,8,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
      56,100,114,50,61,124,124,119,96,93,50,125,0>>.
+
+example_mysql_server_handshake2() ->
+    <<52,0,0,0,10,53,46,48,46,52,53,0,12,0,0,0,56,124,44,98,44,79,45,50,0,
+     44,162,8,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,126,75,60,42,90,104,122,
+     78,86,70,60,0>>.
 
 example_scramble_buff() ->
     <<119,94,80,87,66,36,43,75,121,63,111,49,68,69,106,101,62,
@@ -320,6 +339,10 @@ scramble_test() ->
 
 client_handshake_test() ->
     Hsk = client_handshake("ejabberd", "ejabberd", [{scramble_buff, example_scramble_buff()},
+                                                    {client_flags, [long_password,long_flag,
+                                                                    compress,local_files,
+                                                                    protocol_41,transactions,
+                                                                    secure_connection]},
                                                     {max_packet_size, 1073741824}]),
     Pkt = encode(Hsk),
     Bytes = example_client_handshake(),

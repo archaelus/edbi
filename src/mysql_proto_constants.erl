@@ -14,6 +14,9 @@
          ,error/1
          ,error_code/1
          ,errors/0
+         ,client_flags/0
+         ,client_flags/1
+         ,capabilities/1
         ]).
 
 %%====================================================================
@@ -1813,6 +1816,53 @@ errors() ->
      ,cant_alter_log_table
      ,bad_log_engine
      ,cant_drop_log_table].    
+
+client_flags() ->
+    [{long_password, 1, "new more secure passwords"}
+     ,{found_rows, 2, "Found instead of affected rows"}
+     ,{long_flag, 4, "Get all column flags"}
+     ,{connect_with_db, 8, "One can specify db on connect"}
+     ,{no_schema, 16, "Don't allow database.table.column"}
+     ,{compress, 32, "Can use compression protocol"}
+     ,{odbc, 64, "Odbc client"}
+     ,{local_files, 128, "Can use LOAD DATA LOCAL"}
+     ,{ignore_space, 256, "Ignore spaces before '('"}
+     ,{protocol_41, 512, "New 4.1 protocol" }
+     ,{interactive, 1024, "This is an interactive client"}
+     ,{ssl, 2048, "Switch to SSL after handshake"}
+     ,{ignore_sigpipe, 4096, "IGNORE sigpipes"}
+     ,{transactions, 8192, "Client knows about transactions"}
+     ,{reserved, 16384, "Old flag for 4.1 protocol "}
+     ,{secure_connection, 32768, "New 4.1 authentication"}
+     ,{multi_statements, 65536, "Enable/disable multi-stmt support"}
+     ,{multi_results, 131072, "Enable/disable multi-results"}
+    ].
+
+client_flags(Value) when is_integer(Value) ->
+    lists:reverse(flags(Value, client_flags())).
+
+capabilities(Flags) when is_list(Flags) ->
+    flag_value(Flags, client_flags()).
+
+flags(Flags, FlagDefs) when is_integer(Flags) ->
+    lists:foldl(fun ({Flag, Pos, _Desc}, Acc)
+                    when Flags band Pos =/= 0 ->
+                        [Flag | Acc];
+                    (_, Acc) -> Acc
+                end,
+                [],
+                FlagDefs).
+
+flag_value(Flags, FlagDefs) ->
+    lists:foldl(fun (Flag, Acc) ->
+                        case lists:keysearch(Flag, 1, FlagDefs) of
+                            {value, {Flag, Pos, _Desc}} ->
+                                Acc bor Pos;
+                            false -> Acc
+                        end
+                end,
+                0,
+                Flags).
 
 %%====================================================================
 %% Internal functions
