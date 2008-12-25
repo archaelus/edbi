@@ -26,6 +26,8 @@
 
 decode(Type, <<Length:24/little, SeqNo:8/little, Packet:Length/binary, Rest/binary>>) ->
     {packet, SeqNo, decode_packet(Type, Packet), Rest};
+decode(packet, <<Length:24/little, SeqNo:8/little, Packet:Length/binary, Rest/binary>>) ->
+    {packet, <<Length:24/little, SeqNo:8/little, Packet:Length/binary>>, Rest};
 decode(_Type, Buf = <<Length:24/little, _SeqNo:8/little, _/binary>>) ->
     {incomplete, (Length + 4) - byte_size(Buf), Buf};
 decode(_Type, Rest) ->
