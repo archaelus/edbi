@@ -48,6 +48,7 @@ encode({server_handshake, Values}) ->
      <<(mysql_proto_constants:status(proplists:get_value(server_status,Values))):16/little>>,
      << 0:(8*13) >>,
      Scramble2];
+
 encode({client_handshake, Values}) ->
     [<<(mysql_proto_constants:capabilities(proplists:get_value(client_flags,Values))):32/little>>,
      <<(proplists:get_value(max_packet_size,Values)):32/little>>,
@@ -173,6 +174,7 @@ decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
         Error ->
             throw({decode_error, Error})
     end;
+
 decode_packet(client_handshake,
               <<ClientFlags:32/little,
                MaxPktSize:32/little,
@@ -202,6 +204,7 @@ decode_packet(client_handshake,
                     end
             end
     end;
+
 decode_packet(command, <<Code:8/little, Rest/binary>>) ->
     Command = mysql_proto_constants:command(Code),
     {command, Command,
