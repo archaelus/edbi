@@ -100,6 +100,10 @@ client_handshake(Username, Password, Options) when is_binary(Username), is_binar
       {charset_no, proplists:get_value(charset_no, Options, ?MYSQL_DEFAULT_CHARSET)},
       {username, Username},
       {scrambled_pass, scramble_password(ScrambleBuff,Password)}
+      | case proplists:get_value(dbname, Options) of
+            undefined -> [];
+            V -> [{dbname, V}];
+        end
      ]}.
 
 
