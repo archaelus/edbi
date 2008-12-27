@@ -192,7 +192,7 @@ decode_packet(client_handshake,
                     {client_handshake,
                      Opts ++ [{username, UserName},
                               {scramble_buff, ScrambleBuff}]};
-                {ScrambleBuff, <<0, Rest3>>} ->
+                {ScrambleBuff, <<0, Rest3/binary>>} ->
                     case decode_nullterm_string(Rest3) of
                         {DbName, <<>>} ->
                             {client_handshake,
