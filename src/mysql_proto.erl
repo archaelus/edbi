@@ -349,6 +349,12 @@ example_client_handshake() ->
      250,250,28,1,178,179,188,240,224,6,40,213,32,38,142,14,
      69,236,160,21>>.
 
+example_client_handshake2() ->
+    <<62,0,0,1,165,162,0,0,0,0,0,64,8,0,0,0,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,101,106,97,98,98,101,114,100,0,20,
+     82,62,201,159,85,89,48,110,205,6,141,187,19,159,158,11,
+     44,152,158,145>>.
+
 example_ok_packet() ->
     <<7,0,0,2,0,0,0,2,0,0,0>>.
 
@@ -427,3 +433,14 @@ result_set_header_test_() ->
               end,
               [{A,B} || A <- lists:seq(1,10),
                         B <- lists:seq(0,2) ]).
+
+reencode_test_() ->
+    lists:map(fun ({Type, Bytes}) ->
+                      {packet, Seq, Pkt, <<>>} = decode(Type, Bytes),
+                      ?_assertMatch(Bytes,
+                                    encode_packet(Seq, encode(Pkt)))
+              end,
+              [{client_handshake, example_client_handshake()},
+               {client_handshake, example_client_handshake2()},
+               {server_handshake, example_mysql_server_handshake()},
+               {server_handshake, example_mysql_server_handshake2()}]).
