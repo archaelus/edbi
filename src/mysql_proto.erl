@@ -52,13 +52,21 @@ encode({client_handshake, Values}) ->
      << 0:(8*23) >>,
      encode_nullterm_string(proplists:get_value(username,Values)),
      case proplists:get_value(scrambled_pass,Values) of
-         undefined -> [];
-         V -> encode_lcb(V)
+         %% If we don't have a scrambled pass, use the scramble_buff else
+         %% return [] which will disappear when this iolist gets flattened.
+         undefined ->
+             case proplists:get_value(scramble_buff, Values) of
+                 undefined -> [];
+                 Buf -> encode_lcb(Buf)
+             end;
+         Pass -> encode_lcb(Pass)
      end,
      case proplists:get_value(dbname,Values) of
-         undefined -> [];
-         V -> [0, encode_nullterm_string(V)]
+         DBName when is_list(DBName); is_binary(DBName) ->
+             [0, encode_nullterm_string(DBName)];
+         _ -> []
      end];
+
 encode({command, Code, Options}) ->
     [mysql_proto_constants:command_code(Code)
      |encode_command(Code, Options)];
