@@ -260,7 +260,7 @@ decode_nullterm_string(Bin, Idx) ->
     end.
 
 
-encode_nullterm_string(Str) ->
+encode_nullterm_string(Str) when is_list(Str); is_binary(Str) ->
     iolist_to_binary([Str, 0]).
 
 encode_lcb(null) ->
