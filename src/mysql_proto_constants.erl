@@ -17,6 +17,9 @@
          ,client_flags/0
          ,client_flags/1
          ,capabilities/1
+         ,status_flags/0
+         ,status_flags/1
+         ,status/1
         ]).
 
 %%====================================================================
@@ -82,6 +85,7 @@ command_code(stmt_close) -> 16#19;
 command_code(stmt_reset) -> 16#1a;
 command_code(set_option) -> 16#1b;
 command_code(stmt_fetch) -> 16#1c.
+
 commands() ->
     [sleep
      ,quit
@@ -1844,6 +1848,27 @@ client_flags(Value) when is_integer(Value) ->
 capabilities(Flags) when is_list(Flags) ->
     flag_value(Flags, client_flags()).
 
+status_flags() ->
+    [{in_trans, 1, "Transaction has started"}
+     ,{autocommit, 2, "Server in auto_commit mode"}
+     ,{more_results_exists, 8, "Multi query - next query exists"}
+     ,{query_no_good_index_used, 16, no_description}
+     ,{query_no_index_used, 32, no_description}
+     ,{cursor_exists, 64, no_description}
+     ,{last_row_sent, 128, no_description}
+     ,{db_dropped, 256, "A database was dropped"}
+     ,{no_backslash_escapes, 512, no_description}].
+
+status_flags(Value) when is_integer(Value) ->
+    lists:reverse(flags(Value, status_flags())).
+
+status(Flags) when is_list(Flags) ->
+    flag_value(Flags, status_flags()).
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
 flags(Flags, FlagDefs) when is_integer(Flags) ->
     lists:foldl(fun ({Flag, Pos, _Desc}, Acc)
                     when Flags band Pos =/= 0 ->
@@ -1863,7 +1888,3 @@ flag_value(Flags, FlagDefs) ->
                 end,
                 0,
                 Flags).
-
-%%====================================================================
-%% Internal functions
-%%====================================================================

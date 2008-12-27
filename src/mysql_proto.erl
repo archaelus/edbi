@@ -42,7 +42,7 @@ encode({server_handshake, Values}) ->
      0,
      <<(mysql_proto_constants:capabilities(proplists:get_value(server_capabilities,Values))):16/little>>,
      <<(proplists:get_value(language,Values)):8/little>>,
-     <<(proplists:get_value(server_status,Values)):16/little>>,
+     <<(mysql_proto_constants:status(proplists:get_value(server_status,Values))):16/little>>,
      << 0:(8*13) >>,
      Scramble2];
 encode({client_handshake, Values}) ->
@@ -158,7 +158,7 @@ decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
               {scramble_buff, iolist_to_binary([Scramble1, Scramble2])},
               {server_capabilities, mysql_proto_constants:client_flags(Capabilities)},
               {language, Lang},
-              {server_status, Status}]};
+              {server_status, mysql_proto_constants:status_flags(Status)}]};
         Error ->
             throw({decode_error, Error})
     end;
