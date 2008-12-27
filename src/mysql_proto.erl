@@ -359,7 +359,7 @@ scramble_test() ->
 
 client_handshake_test() ->
     Hsk = client_handshake("ejabberd", "ejabberd", [{scramble_buff, example_scramble_buff()},
-                                                    {client_flags, [long_password,long_flag,
+                                                    {client_flags, [long_password,long_flags,
                                                                     compress,local_files,
                                                                     protocol_41,transactions,
                                                                     secure_connection]},
