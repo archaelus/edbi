@@ -8,8 +8,11 @@
 -module(mysql_proto).
 
 %% API
--export([decode/2,
-         encode/1]).
+-export([decode/2
+         ,encode/1
+         ,encode_packet/2
+         ,client_handshake/3
+        ]).
 -export([test_client/0]).
 
 -compile(export_all).
