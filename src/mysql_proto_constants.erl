@@ -1824,7 +1824,7 @@ errors() ->
 client_flags() ->
     [{long_password, 1, "new more secure passwords"}
      ,{found_rows, 2, "Found instead of affected rows"}
-     ,{long_flag, 4, "Get all column flags"}
+     ,{long_flags, 4, "Get all column flags"}
      ,{connect_with_db, 8, "One can specify db on connect"}
      ,{no_schema, 16, "Don't allow database.table.column"}
      ,{compress, 32, "Can use compression protocol"}
