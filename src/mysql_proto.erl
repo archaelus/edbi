@@ -102,7 +102,7 @@ client_handshake(Username, Password, Options) when is_binary(Username), is_binar
       {scrambled_pass, scramble_password(ScrambleBuff,Password)}
       | case proplists:get_value(dbname, Options) of
             undefined -> [];
-            V -> [{dbname, V}];
+            V -> [{dbname, V}]
         end
      ]}.
 
@@ -228,7 +228,7 @@ decode_packet(response, <<0, Rest1/binary>>) ->
                 Message/binary>>} = decode_fle(Rest2),
     {response, ok, [{affected_rows, AffectedRows},
                     {insert_id, InsertId},
-                    {server_status, ServerStatus},
+                    {server_status, mysql_proto_constants:status_flags(ServerStatus)},
                     {warning_count, Warnings},
                     {message, Message}]};
 decode_packet(result_set_header, Rest1) ->
