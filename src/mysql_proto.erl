@@ -81,7 +81,11 @@ encode({response, {error, Error, SqlState, Message}}) when is_atom(Error) ->
     [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
       $\$, SqlState:5/binary, Message/binary>>];
 encode({result_set_header, FieldCount, Extra}) ->
-    [encode_fle(FieldCount), encode_fle(Extra)].
+    [encode_fle(FieldCount), encode_fle(Extra)];
+encode({field, Values}) ->
+    ok;
+encode({row, Values}) ->
+    [encode_lcb(V) || V <- Values].
 
 client_handshake(Username, Password, Options) when is_list(Username) ->
     client_handshake(iolist_to_binary(Username), Password, Options);
@@ -234,7 +238,46 @@ decode_packet(response, <<0, Rest1/binary>>) ->
 decode_packet(result_set_header, Rest1) ->
     {FieldCount,Rest2} = decode_fle(Rest1),
     {Extra, <<>>} = decode_fle(Rest2),
-    {result_set_header, FieldCount, Extra}.
+    {result_set_header, FieldCount, Extra};
+
+decode_packet(field, << 16#fe, Warnings:16/little,
+                      ServerStatus:16/little>>) ->
+    {end_of_fields, [{warnings, Warnings},
+                     {server_status,
+                      mysql_proto_constants:status_flags(ServerStatus)}]};
+decode_packet(field, Rest1) ->
+    {Rest2, Fields} = lists:foldl(fun (Field, {Bin, Acc}) ->
+                                          {V,Rest} = decode_lcb(Bin),
+                                          {Rest, [{Field, V}|Acc]}
+                                  end,
+                                  {Rest1, []},
+                                  [catalog, db, table, org_table, name, org_name]),
+    case Rest2 of
+        <<_Filler:8,
+         CharsetNo:16/little,
+         Length:32/little,
+         Type:8/little,
+         Flags:16/little,
+         Decimals:8/little,
+         _Filler2:16,
+         Default/binary>> ->
+            {D, <<>>} = decode_lcb(Default),
+            {field, Fields ++
+             [{charset_no, CharsetNo},
+              {length, Length},
+              {type, mysql_proto_constants:field_type(Type)},
+              {flags, mysql_proto_constants:field_flags(Flags)},
+              {decimals, Decimals},
+              {default, D}]}
+    end;
+
+decode_packet(row, Values) ->
+    {row, decode_row(decode_lcb(Values))}.
+
+decode_row({V,<<>>}) ->
+    [V];
+decode_row({V, Rest}) ->
+    [V] ++ decode_row(decode_lcb(Rest)).
 
 decode_command(quit, <<>>) -> [];
 decode_command(sleep, <<>>) -> [];
@@ -263,6 +306,8 @@ decode_nullterm_string(Bin, Idx) ->
 encode_nullterm_string(Str) when is_list(Str); is_binary(Str) ->
     iolist_to_binary([Str, 0]).
 
+encode_lcb(String) when is_list(String) ->
+    encode_lcb(iolist_to_binary(String));
 encode_lcb(null) ->
     <<251:8/little>>;
 encode_lcb(Bin) when byte_size(Bin) =< 250 ->
@@ -444,3 +489,12 @@ reencode_test_() ->
                {client_handshake, example_client_handshake2()},
                {server_handshake, example_mysql_server_handshake()},
                {server_handshake, example_mysql_server_handshake2()}]).
+
+row_test() ->
+    Values = [ <<"One">>,
+               <<"Two">>,
+               <<"t">>,
+               <<"three">> ],
+    Enc = encode({row, Values}),
+    ?assertMatch({row, Values},
+                 decode_packet(row, iolist_to_binary(Enc))).
