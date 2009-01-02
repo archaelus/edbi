@@ -20,6 +20,11 @@
          ,status_flags/0
          ,status_flags/1
          ,status/1
+         ,field_type/1
+         ,field_type_code/1
+         ,field_flags/0
+         ,field_flags/1
+         ,field_flag_value/1
         ]).
 
 %%====================================================================
@@ -1864,6 +1869,85 @@ status_flags(Value) when is_integer(Value) ->
 
 status(Flags) when is_list(Flags) ->
     flag_value(Flags, status_flags()).
+
+field_type(16#00) -> decimal;
+field_type(16#01) -> tiny;
+field_type(16#02) -> short;
+field_type(16#03) -> long;
+field_type(16#04) -> float;
+field_type(16#05) -> double;
+field_type(16#06) -> null;
+field_type(16#07) -> timestamp;
+field_type(16#08) -> longlong;
+field_type(16#09) -> int24;
+field_type(16#0a) -> date;
+field_type(16#0b) -> time;
+field_type(16#0c) -> datetime;
+field_type(16#0d) -> year;
+field_type(16#0e) -> newdate;
+field_type(16#0f) -> varchar; % (new in mysql 5.0);
+field_type(16#10) -> bit; %(new in mysql 5.0);
+field_type(16#f6) -> newdecimal; %(new in mysql 5.0);
+field_type(16#f7) -> enum;
+field_type(16#f8) -> set;
+field_type(16#f9) -> tiny_blob;
+field_type(16#fa) -> medium_blob;
+field_type(16#fb) -> long_blob;
+field_type(16#fc) -> blob;
+field_type(16#fd) -> var_string;
+field_type(16#fe) -> string;
+field_type(16#ff) -> geometry.
+
+field_type_code(decimal) -> 16#00;
+field_type_code(tiny) -> 16#01;
+field_type_code(short) -> 16#02;
+field_type_code(long) -> 16#03;
+field_type_code(float) -> 16#04;
+field_type_code(double) -> 16#05;
+field_type_code(null) -> 16#06;
+field_type_code(timestamp) -> 16#07;
+field_type_code(longlong) -> 16#08;
+field_type_code(int24) -> 16#09;
+field_type_code(date) -> 16#0a;
+field_type_code(time) -> 16#0b;
+field_type_code(datetime) -> 16#0c;
+field_type_code(year) -> 16#0d;
+field_type_code(newdate) -> 16#0e;
+field_type_code(varchar) -> 16#0f;
+field_type_code(bit) -> 16#10;
+field_type_code(newdecimal) -> 16#f6;
+field_type_code(enum) -> 16#f7;
+field_type_code(set) -> 16#f8;
+field_type_code(tiny_blob) -> 16#f9;
+field_type_code(medium_blob) -> 16#fa;
+field_type_code(long_blob) -> 16#fb;
+field_type_code(blob) -> 16#fc;
+field_type_code(var_string) -> 16#fd;
+field_type_code(string) -> 16#fe;
+field_type_code(geometry) -> 16#ff.
+
+field_flags() ->
+    [{not_null, 1, "Field can't be NULL"}
+     ,{pri_key, 2, "Field is part of a primary key"}
+     ,{unique_key, 4, "Field is part of a unique key"}
+     ,{multiple_key, 8, "Field is part of a key"}
+     ,{blob, 16, "Field is a blob"}
+     ,{unsigned, 32, "Field is unsigned"}
+     ,{zerofill, 64, "Field is zerofill"}
+     ,{binary, 128, "Field is binary"}
+     ,{enum, 256, "Field is an enum"}
+     ,{auto_increment, 512, "Field is an autoincrement field"}
+     ,{timestamp, 1024, "Field is a timestamp"}
+     ,{set, 2048, "Field is a set"}
+     ,{num, 32768, "Field is num (for clients)"}
+    ].
+
+field_flags(Value) when is_integer(Value) ->
+    lists:reverse(flags(Value, field_flags())).
+
+field_flag_value(Flags) when is_list(Flags) ->
+    flag_value(Flags, field_flags()).
+
 
 %%====================================================================
 %% Internal functions
