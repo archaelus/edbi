@@ -6,7 +6,7 @@ APP          := edbi
 all: erl ebin/$(APP).app
 
 erl: ebin lib
-	@$(ERL) -pa $(EBIN_DIRS) -noinput +B \
+	@$(ERL) -pa $(EBIN_DIRS) -pa ebin -noinput +B \
 	  -eval 'case make:all() of up_to_date -> halt(0); error -> halt(1) end.'
 
 docs:
