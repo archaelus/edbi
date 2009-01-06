@@ -122,9 +122,17 @@ handle_call({squery, Q}, From, S) ->
 
 sent_query(From, State) ->
     {Bytes, NewState} = read_packet(State),
-    case mysql_proto:decode(result_set_header, Bytes) of
+    case catch mysql_proto:decode(result_set_header, Bytes) of
         {packet, _Seq, {result_set_header, FieldCount, _Extra}, _Rest} ->
-            read_fields(FieldCount, From, NewState)
+            read_fields(FieldCount, From, NewState);
+        {'EXIT', {function_clause, _}} ->
+            case mysql_proto:decode(response, Bytes) of
+                {packet, _Seq,
+                 {response, {error, Type, _DBState, Message}},
+                 _Rest} ->
+                    reply(From, {query_error, Type, Message}),
+                    connected(NewState)
+            end
     end.
 
 read_fields(FieldCount, From, State) ->
