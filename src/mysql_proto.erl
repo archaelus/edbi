@@ -13,7 +13,6 @@
          ,encode_packet/2
          ,client_handshake/3
         ]).
--export([test_client/0]).
 
 -compile(export_all).
 
@@ -24,7 +23,7 @@
 -define(MYSQL_DEFAULT_CHARSET, 8).
 
 %%====================================================================
-%% API
+%% Decoding
 %%====================================================================
 
 decode(packet, <<Length:24/little, SeqNo:8/little, Packet:Length/binary, Rest/binary>>) ->
@@ -35,131 +34,6 @@ decode(_Type, Buf = <<Length:24/little, _SeqNo:8/little, _/binary>>) ->
     {incomplete, (Length + 4) - byte_size(Buf), Buf};
 decode(_Type, Rest) ->
     {incomplete, Rest}.
-
-encode({server_handshake, Values}) ->
-    <<Scramble1:8/binary,Scramble2/binary>> = proplists:get_value(scramble_buff,Values),
-    [<<?MYSQL_VERSION_10>>,
-     encode_nullterm_string(proplists:get_value(server_vsn,Values)),
-     <<(proplists:get_value(thread_id,Values)):32/little>>,
-     Scramble1, 
-     0,
-     <<(mysql_proto_constants:capabilities(proplists:get_value(server_capabilities,Values))):16/little>>,
-     <<(proplists:get_value(language,Values)):8/little>>,
-     <<(mysql_proto_constants:status(proplists:get_value(server_status,Values))):16/little>>,
-     << 0:(8*13) >>,
-     Scramble2];
-
-encode({client_handshake, Values}) ->
-    [<<(mysql_proto_constants:capabilities(proplists:get_value(client_flags,Values))):32/little>>,
-     <<(proplists:get_value(max_packet_size,Values)):32/little>>,
-     <<(proplists:get_value(charset_no,Values)):8/little>>,
-     << 0:(8*23) >>,
-     encode_nullterm_string(proplists:get_value(username,Values)),
-     case proplists:get_value(scrambled_pass,Values) of
-         %% If we don't have a scrambled pass, use the scramble_buff else
-         %% return [] which will disappear when this iolist gets flattened.
-         undefined ->
-             case proplists:get_value(scramble_buff, Values) of
-                 undefined -> [];
-                 Buf -> encode_lcb(Buf)
-             end;
-         Pass -> encode_lcb(Pass)
-     end,
-     case proplists:get_value(dbname,Values) of
-         DBName when is_list(DBName); is_binary(DBName) ->
-             [0, encode_nullterm_string(DBName)];
-         _ -> []
-     end];
-
-encode({command, Code, Options}) ->
-    [mysql_proto_constants:command_code(Code)
-     |encode_command(Code, Options)];
-encode({response, {error, Error, no_sqlstate, Message}}) when is_atom(Error) ->
-    [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
-      Message/binary>>];
-encode({response, {error, Error, SqlState, Message}}) when is_atom(Error) ->
-    [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
-      $\$, SqlState:5/binary, Message/binary>>];
-encode({result_set_header, FieldCount, Extra}) ->
-    [encode_fle(FieldCount), encode_fle(Extra)];
-encode({field, Values}) ->
-    ok;
-encode({row, Values}) ->
-    [encode_lcb(V) || V <- Values].
-
-client_handshake(Username, Password, Options) when is_list(Username) ->
-    client_handshake(iolist_to_binary(Username), Password, Options);
-client_handshake(Username, Password, Options) when is_list(Password) ->
-    client_handshake(Username, iolist_to_binary(Password), Options);
-client_handshake(Username, Password, Options) when is_binary(Username), is_binary(Password) ->
-    ScrambleBuff = proplists:get_value(scramble_buff, Options),
-    Flags = proplists:get_value(client_flags, Options, [long_password,
-                                                        long_flags,
-                                                        protocol_41,
-                                                        transactions
-                                                       ]),
-    {client_handshake,
-     [{client_flags, Flags},
-      {max_packet_size, proplists:get_value(max_packet_size, Options, ?MYSQL_16MEG_PKT)},
-      {charset_no, proplists:get_value(charset_no, Options, ?MYSQL_DEFAULT_CHARSET)},
-      {username, Username},
-      {scrambled_pass, scramble_password(ScrambleBuff,Password)}
-      | case proplists:get_value(dbname, Options) of
-            undefined -> [];
-            V -> [{dbname, V}]
-        end
-     ]}.
-
-
-encode_packet(Seq, IoList) when is_list(IoList) ->
-    encode_packet(Seq, iolist_to_binary(IoList));
-encode_packet(Seq, Bin) when is_binary(Bin) ->
-    <<(byte_size(Bin)):24/little, Seq:8/little, Bin/binary>>.
-
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-encode_command(sleep, []) -> [];%server only
-encode_command(quit, []) -> [];
-encode_command(init_db, [{db_name, DB}])
-  when is_list(DB); is_binary(DB) -> [DB];
-encode_command('query', [{sql, SQL}])
-  when is_list(SQL); is_binary(SQL) -> [SQL];
-encode_command(field_list, _V) -> [];
-encode_command(create_db, _V) -> [];%deprecated command
-encode_command(drop_db, _V) -> [];%deprecated command
-encode_command(refresh, _V) -> [];
-encode_command(shutdown, _V) -> [];
-encode_command(statistics, []) -> [];
-encode_command(process_info, []) -> [];
-encode_command(connect, []) -> [];%server only
-encode_command(process_kill, [{process_id, ID}]) ->
-    [<<ID:32/little>>];
-encode_command(debug, _V) -> [];
-encode_command(ping, _V) -> [];
-encode_command(time, _V) -> [];%server only
-encode_command(delayed_insert, _V) -> [];%server only
-encode_command(change_user, V) ->
-    [encode_nullterm_string(proplists:get_value(username, V)),
-     encode_lcb(proplists:get_value(password, V)),
-     encode_lcb(proplists:get_value(dbname, V)),
-     case proplists:get_value(charset_no, V) of
-         undefined -> [];
-         N -> [<<N:16/little>>]
-     end];
-encode_command(binlog_dump, _V) -> [];
-encode_command(table_dump, _V) -> [];
-encode_command(connect_out, _V) -> [];%server only
-encode_command(register_slave, _V) -> [];%server only
-encode_command(stmt_prepare, _V) -> [];
-encode_command(stmt_execute, _V) -> [];
-encode_command(stmt_send_long_data, _V) -> [];
-encode_command(stmt_close, _V) -> [];
-encode_command(stmt_reset, _V) -> [];
-encode_command(set_option, _V) -> [];
-encode_command(stmt_fetch, _V) -> [].
 
 decode_packet(server_handshake, <<?MYSQL_VERSION_10, Rest/binary>>) ->
     case decode_nullterm_string(Rest) of
@@ -236,9 +110,13 @@ decode_packet(response, <<0, Rest1/binary>>) ->
                     {warning_count, Warnings},
                     {message, Message}]};
 decode_packet(result_set_header, Rest1) ->
-    {FieldCount,Rest2} = decode_fle(Rest1),
-    {Extra, <<>>} = decode_fle(Rest2),
-    {result_set_header, FieldCount, Extra};
+    case decode_fle(Rest1) of
+        {FieldCount, <<>>} ->
+            {result_set_header, FieldCount, no_extra};
+        {FieldCount,Rest2} ->
+            {Extra, <<>>} = decode_fle(Rest2),
+            {result_set_header, FieldCount, Extra}
+    end;
 
 decode_packet(field, << 16#fe, Warnings:16/little,
                       ServerStatus:16/little>>) ->
@@ -261,16 +139,24 @@ decode_packet(field, Rest1) ->
          Decimals:8/little,
          _Filler2:16,
          Default/binary>> ->
-            {D, <<>>} = decode_lcb(Default),
             {field, Fields ++
              [{charset_no, CharsetNo},
               {length, Length},
               {type, mysql_proto_constants:field_type(Type)},
               {flags, mysql_proto_constants:field_flags(Flags)},
-              {decimals, Decimals},
-              {default, D}]}
+              {decimals, Decimals}
+              | case Default of
+                    <<>> -> [];
+                    _ ->
+                        {D, <<>>} = decode_lcb(Default),
+                        [{default, D}]
+                end
+             ]}
     end;
 
+decode_packet(row, <<254, Warnings:16/little, Status:16/little>>) ->
+    {row_eof, [{warnings, Warnings},
+               {server_status, mysql_proto_constants:status_flags(Status)}]};
 decode_packet(row, Values) ->
     {row, decode_row(decode_lcb(Values))}.
 
@@ -290,6 +176,133 @@ decode_command(statistics, <<>>) -> [];
 decode_command(connect, <<>>) -> [];
 decode_command(process_kill, <<ID:32/little>>) ->
     [{process_id, ID}].
+
+%%====================================================================
+%% Encoding
+%%====================================================================
+
+encode_packet(Seq, IoList) when is_list(IoList) ->
+    encode_packet(Seq, iolist_to_binary(IoList));
+encode_packet(Seq, Bin) when is_binary(Bin) ->
+    <<(byte_size(Bin)):24/little, Seq:8/little, Bin/binary>>.
+
+encode({server_handshake, Values}) ->
+    <<Scramble1:8/binary,Scramble2/binary>> = proplists:get_value(scramble_buff,Values),
+    [<<?MYSQL_VERSION_10>>,
+     encode_nullterm_string(proplists:get_value(server_vsn,Values)),
+     <<(proplists:get_value(thread_id,Values)):32/little>>,
+     Scramble1, 
+     0,
+     <<(mysql_proto_constants:capabilities(proplists:get_value(server_capabilities,Values))):16/little>>,
+     <<(proplists:get_value(language,Values)):8/little>>,
+     <<(mysql_proto_constants:status(proplists:get_value(server_status,Values))):16/little>>,
+     << 0:(8*13) >>,
+     Scramble2];
+
+encode({client_handshake, Values}) ->
+    [<<(mysql_proto_constants:capabilities(proplists:get_value(client_flags,Values))):32/little>>,
+     <<(proplists:get_value(max_packet_size,Values)):32/little>>,
+     <<(proplists:get_value(charset_no,Values)):8/little>>,
+     << 0:(8*23) >>,
+     encode_nullterm_string(proplists:get_value(username,Values)),
+     case proplists:get_value(scrambled_pass,Values) of
+         %% If we don't have a scrambled pass, use the scramble_buff else
+         %% return [] which will disappear when this iolist gets flattened.
+         undefined ->
+             case proplists:get_value(scramble_buff, Values) of
+                 undefined -> [];
+                 Buf -> encode_lcb(Buf)
+             end;
+         Pass -> encode_lcb(Pass)
+     end,
+     case proplists:get_value(dbname,Values) of
+         DBName when is_list(DBName); is_binary(DBName) ->
+             [0, encode_nullterm_string(DBName)];
+         _ -> []
+     end];
+
+encode({command, Code, Options}) ->
+    [mysql_proto_constants:command_code(Code)
+     |encode_command(Code, Options)];
+encode({response, {error, Error, no_sqlstate, Message}}) when is_atom(Error) ->
+    [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
+      Message/binary>>];
+encode({response, {error, Error, SqlState, Message}}) when is_atom(Error) ->
+    [<<16#ff, (mysql_proto_constants:error_code(Error)):16/little,
+      $\$, SqlState:5/binary, Message/binary>>];
+encode({result_set_header, FieldCount, Extra}) ->
+    [encode_fle(FieldCount), encode_fle(Extra)];
+encode({field, _Values}) ->
+    erlang:exit(nyi);
+encode({row, Values}) ->
+    [encode_lcb(V) || V <- Values].
+
+client_handshake(Username, Password, Options) when is_list(Username) ->
+    client_handshake(iolist_to_binary(Username), Password, Options);
+client_handshake(Username, Password, Options) when is_list(Password) ->
+    client_handshake(Username, iolist_to_binary(Password), Options);
+client_handshake(Username, Password, Options) when is_binary(Username), is_binary(Password) ->
+    ScrambleBuff = proplists:get_value(scramble_buff, Options),
+    Flags = proplists:get_value(client_flags, Options, [long_password,
+                                                        long_flags,
+                                                        protocol_41,
+                                                        transactions
+                                                       ]),
+    {client_handshake,
+     [{client_flags, Flags},
+      {max_packet_size, proplists:get_value(max_packet_size, Options, ?MYSQL_16MEG_PKT)},
+      {charset_no, proplists:get_value(charset_no, Options, ?MYSQL_DEFAULT_CHARSET)},
+      {username, Username},
+      {scrambled_pass, scramble_password(ScrambleBuff,Password)}
+      | case proplists:get_value(dbname, Options) of
+            undefined -> [];
+            V -> [{dbname, V}]
+        end
+     ]}.
+
+encode_command(sleep, []) -> [];%server only
+encode_command(quit, []) -> [];
+encode_command(init_db, [{db_name, DB}])
+  when is_list(DB); is_binary(DB) -> [DB];
+encode_command('query', [{sql, SQL}])
+  when is_list(SQL); is_binary(SQL) -> [SQL];
+encode_command(field_list, _V) -> [];
+encode_command(create_db, _V) -> [];%deprecated command
+encode_command(drop_db, _V) -> [];%deprecated command
+encode_command(refresh, _V) -> [];
+encode_command(shutdown, _V) -> [];
+encode_command(statistics, []) -> [];
+encode_command(process_info, []) -> [];
+encode_command(connect, []) -> [];%server only
+encode_command(process_kill, [{process_id, ID}]) ->
+    [<<ID:32/little>>];
+encode_command(debug, _V) -> [];
+encode_command(ping, _V) -> [];
+encode_command(time, _V) -> [];%server only
+encode_command(delayed_insert, _V) -> [];%server only
+encode_command(change_user, V) ->
+    [encode_nullterm_string(proplists:get_value(username, V)),
+     encode_lcb(proplists:get_value(password, V)),
+     encode_lcb(proplists:get_value(dbname, V)),
+     case proplists:get_value(charset_no, V) of
+         undefined -> [];
+         N -> [<<N:16/little>>]
+     end];
+encode_command(binlog_dump, _V) -> [];
+encode_command(table_dump, _V) -> [];
+encode_command(connect_out, _V) -> [];%server only
+encode_command(register_slave, _V) -> [];%server only
+encode_command(stmt_prepare, _V) -> [];
+encode_command(stmt_execute, _V) -> [];
+encode_command(stmt_send_long_data, _V) -> [];
+encode_command(stmt_close, _V) -> [];
+encode_command(stmt_reset, _V) -> [];
+encode_command(set_option, _V) -> [];
+encode_command(stmt_fetch, _V) -> [].
+
+%%====================================================================
+%% Primitive type codec functions
+%%====================================================================
 
 decode_nullterm_string(Bin) ->
     decode_nullterm_string(Bin, 1).
@@ -348,6 +361,10 @@ decode_fle(<<253, Int:24/little, Rest/binary>>) ->
 decode_fle(<<254, Int:64/little, Rest/binary>>) ->
     {Int, Rest}.
 
+%%====================================================================
+%% Password challenge-response calculation
+%%====================================================================
+
 scramble_password(<<ScrambleBuff:20/binary, 0>>, Password) when is_binary(Password) ->
     Stage1 = crypto:sha(Password),
     Stage2 = crypto:sha(Stage1),
@@ -356,19 +373,6 @@ scramble_password(<<ScrambleBuff:20/binary, 0>>, Password) when is_binary(Passwo
 %%====================================================================
 %% Unit testing
 %%====================================================================
-
-test_client() ->
-    {ok, Sock} = gen_tcp:connect("192.168.0.10", 3306,
-                                 [{active, false}, {packet, raw}, binary]),
-    timer:sleep(100),
-    {ok, Bytes} = gen_tcp:recv(Sock, 4),
-    Rcv = case decode(server_handshake, Bytes) of
-              {incomplete, N, Buf} ->
-                  {ok, Rest} = gen_tcp:recv(Sock, N),
-                  iolist_to_binary([Buf, Rest])
-          end,
-    gen_tcp:close(Sock),
-    decode(server_handshake, Rcv).
 
 example_mysql_server_handshake() ->
     <<52,0,0,0,10,53,46,48,46,52,53,0,44,0,0,0,120,42,98,51,
