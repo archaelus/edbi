@@ -2,16 +2,16 @@
 %% @copyright Geoff Cant
 %% @author Geoff Cant <nem@erlang.geek.nz>
 %% @version {@vsn}, {@date} {@time}
-%% @doc The pool supervisor (EDBI toplevel supervisor)
+%% @doc Pool driver connection supervisor
 %% @end
 %%%-------------------------------------------------------------------
--module(edbi_sup).
+-module(edbi_pool_conn_sup).
 
 -behaviour(supervisor).
 
 %% API
 -export([start_link/1
-         ,start_pool/1
+         ,children/1
         ]).
 
 %% Supervisor callbacks
@@ -19,25 +19,16 @@
 
 -include_lib("pool.hrl").
 
--define(SERVER, ?MODULE).
-
 %%====================================================================
 %% API functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% @spec start_link(Args::any()) -> {ok,Pid} | ignore | {error,Error}
+%% @spec start_link() -> {ok,Pid} | ignore | {error,Error}
 %% @doc: Starts the supervisor
 %% @end
 %%--------------------------------------------------------------------
-start_link(_) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
-
-start_pool(#edbi_pool{name=Id} = P) ->
-    CSpec = {Id,
-             {edbi_pool_sup,start_link, [P]},
-             permanent,2000,supervisor,
-             [edbi_pool_sup]},
-    supervisor:start_child(?SERVER, CSpec).
+start_link(#edbi_pool{} = P) ->
+    supervisor:start_link({local, edbi_pool:conn_sup_name(P)}, ?MODULE, [P]).
 
 %%====================================================================
 %% Supervisor callbacks
@@ -53,5 +44,24 @@ start_pool(#edbi_pool{name=Id} = P) ->
 %% specifications.
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok,{{one_for_one,1,10},[]}}.
+init([P = #edbi_pool{pool_size=S}]) ->
+    {ok,{{one_for_one,S,1000},
+         [child(P, N) || N <- lists:seq(1,S)]}}.
+
+children(#edbi_pool{name=N}) ->
+    children(N);
+children(N) when is_atom(N) ->
+    supervisor:which_children(edbi_pool:conn_sup_name(N)).
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+child(Pool = #edbi_pool{driver={Driver, DriverOptions}}, Number) ->
+    {child_id(Driver, Number),
+     edbi_driver:connect_mfa(Driver, Pool, DriverOptions),
+     transient, timer:seconds(2), worker,
+     [Driver]}.
+
+child_id(Driver, Number) ->
+    atom_to_list(Driver) ++ " " ++ integer_to_list(Number).

@@ -7,63 +7,82 @@
 %%%-------------------------------------------------------------------
 -module(edbi_pool).
 
--behaviour(supervisor).
-
 %% API
--export([start_link/3
-         ,connection/1]).
+-export([start/4
+         ,start/1
+         ,queue_name/1
+         ,conn_sup_name/1
+         ,dispatch_query/2
+        ]).
 
-%% Supervisor callbacks
--export([init/1]).
+-export([notify_idle/1
+         ,request_notify/1
+         ,reply_query/2
+        ]).
 
--define(SERVER, ?MODULE).
--define(RESTARTTIME, timer:minutes(10) div timer:seconds(1)).
+-export([test_query_time/3]).
+
+-include_lib("pool.hrl").
+
 %%====================================================================
 %% API functions
 %%====================================================================
-%%--------------------------------------------------------------------
-%% @spec start_link() -> {ok,Pid} | ignore | {error,Error}
-%% @doc: Starts the supervisor
-%% @end
-%%--------------------------------------------------------------------
-start_link(Driver, DriverOptions, Count) ->
-    Children = [ child(Driver, DriverOptions, N)
-                 || N <- lists:seq(1,Count) ],
-    supervisor:start_link(?MODULE, [Children]).
 
-connection(Pool) ->
-    Pids = [Child
-            || {_Id, Child, _Type, _Modules} <- supervisor:which_children(Pool),
-               is_pid(Child) ],
-    Which = random:uniform(length(Pids)),
-    lists:nth(Which, Pids).
+start(Name, Driver, DriverArgs, PoolSize) ->
+    start(#edbi_pool{name=Name,
+                     driver={Driver,DriverArgs},
+                     pool_size=PoolSize}).
 
-%%====================================================================
-%% Supervisor callbacks
-%%====================================================================
-%%--------------------------------------------------------------------
-%% Func: init
-%% @spec (Args) -> {ok,  {SupFlags,  [ChildSpec]}} |
-%%                 ignore                          |
-%%                 {error, Reason}
-%% @doc Whenever a supervisor is started using 
-%% supervisor:start_link/[2,3], this function is called by the new process 
-%% to find out about restart strategy, maximum restart frequency and child 
-%% specifications.
-%% @end
-%%--------------------------------------------------------------------
-init([Children]) ->
-    {ok,{{one_for_one,1,?RESTARTTIME}, Children}}.
+start(#edbi_pool{name=N,
+                 driver={D,A},
+                 pool_size=S
+                } = P)
+  when is_atom(N), is_atom(D), is_list(A), is_integer(S) ->
+    edbi_sup:start_pool(P).
 
-%%====================================================================
-%% Internal functions
-%%====================================================================
+queue_name(#edbi_pool{name=N}) ->
+    queue_name(N);
+queue_name(PoolName) when is_atom(PoolName) ->
+    list_to_atom(atom_to_list(PoolName) ++ "_queue").
 
-child(Driver, DriverOptions, Number) ->
-    {child_id(Driver, Number),
-     edbi_driver:connect_mfa(Driver, DriverOptions),
-     transient, timer:seconds(2), worker,
-     [Driver]}.
+conn_sup_name(#edbi_pool{name=N}) ->
+    conn_sup_name(N);
+conn_sup_name(PoolName) when is_atom(PoolName) ->
+    list_to_atom(atom_to_list(PoolName) ++ "_conn_sup").
 
-child_id(Driver, Number) ->
-    atom_to_list(Driver) ++ " " ++ integer_to_list(Number).
+notify_idle(Name) ->
+    error_logger:info_msg("About to notify ~p that ~p is idle",
+                          [queue_name(Name), self()]),
+    queue_name(Name) ! {conn, self(), idle},
+    ok.
+
+request_notify(Pid) when is_pid(Pid) ->
+    Pid ! request_notify.
+
+dispatch_query(Pool, Query) ->
+    gen:call(queue_name(Pool), 'query', Query).
+
+reply_query({_From, _Ref} = Caller, Reply) ->
+    gen:reply(Caller, Reply).
+
+test_query_time(Pool, Query, Count) ->
+    pmap(fun (N) ->
+                 timer:tc(?MODULE, dispatch_query,
+                          [Pool, Query ++ " " ++ integer_to_list(N)])
+         end,
+         lists:seq(1,Count)).
+
+%%% Pmap from http://lukego.livejournal.com/6753.html -- Luke Gorrie
+pmap(F,List) ->
+    [wait_result(Worker)
+     || Worker <- [spawn_worker(self(),F,E)
+                   || E <- List] ].
+
+spawn_worker(Parent, F, E) ->
+    erlang:spawn_monitor(fun() -> Parent ! {self(), F(E)} end).
+
+wait_result({Pid,Ref}) ->
+    receive
+        {'DOWN', Ref, _, _, normal} -> receive {Pid,Result} -> Result end;
+        {'DOWN', Ref, _, _, Reason} -> exit(Reason)
+    end.

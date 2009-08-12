@@ -2,42 +2,33 @@
 %% @copyright Geoff Cant
 %% @author Geoff Cant <nem@erlang.geek.nz>
 %% @version {@vsn}, {@date} {@time}
-%% @doc The pool supervisor (EDBI toplevel supervisor)
+%% @doc A database connection pool.
 %% @end
 %%%-------------------------------------------------------------------
--module(edbi_sup).
+-module(edbi_pool_sup).
 
 -behaviour(supervisor).
 
+
 %% API
--export([start_link/1
-         ,start_pool/1
-        ]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
 
 -include_lib("pool.hrl").
 
--define(SERVER, ?MODULE).
-
+-define(RESTART_SECONDS, 2). % seconds
 %%====================================================================
 %% API functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% @spec start_link(Args::any()) -> {ok,Pid} | ignore | {error,Error}
+%% @spec start_link() -> {ok,Pid} | ignore | {error,Error}
 %% @doc: Starts the supervisor
 %% @end
 %%--------------------------------------------------------------------
-start_link(_) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
-
-start_pool(#edbi_pool{name=Id} = P) ->
-    CSpec = {Id,
-             {edbi_pool_sup,start_link, [P]},
-             permanent,2000,supervisor,
-             [edbi_pool_sup]},
-    supervisor:start_child(?SERVER, CSpec).
+start_link(#edbi_pool{} = P) ->
+    supervisor:start_link(?MODULE, [P]).
 
 %%====================================================================
 %% Supervisor callbacks
@@ -53,5 +44,17 @@ start_pool(#edbi_pool{name=Id} = P) ->
 %% specifications.
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok,{{one_for_one,1,10},[]}}.
+init([Pool]) ->
+    {ok,
+     {{one_for_one,1,?RESTART_SECONDS},
+      [ {pool_queue,
+         {edbi_pool_queue, start_link, [Pool]},
+         permanent, timer:seconds(?RESTART_SECONDS), worker, [edbi_pool_queue]}
+       ,{pool_conn_sup,
+         {edbi_pool_conn_sup, start_link, [Pool]},
+         permanent, timer:seconds(?RESTART_SECONDS), worker, [edbi_pool_queue]}
+      ]}}.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
