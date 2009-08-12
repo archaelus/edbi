@@ -287,7 +287,7 @@ spawn_link(Mod, StartF) ->
 %%% @doc Equivalent to <code>proc_lib:spawn_opt(StartF, Opts)</code>. 
 %%% This function also initializes the plain_fsm meta-data.
 %%% @end
-spawn_opt(Mod, StartF, Opts) when function(StartF) ->
+spawn_opt(Mod, StartF, Opts) when is_function(StartF) ->
     ParentPid = self(),
     proc_lib:spawn_opt(fun() ->
 			       init(Mod, StartF, ParentPid)
@@ -298,7 +298,7 @@ spawn_opt(Mod, StartF, Opts) when function(StartF) ->
 %%% @doc Equivalent to <code>proc_lib:spawn_opt(Node, StartF, Opts)</code>. 
 %%% This function also initializes the sysFsm meta-data.
 %%% @end
-spawn_opt(Node, Mod, StartF, Opts) when function(StartF) ->
+spawn_opt(Node, Mod, StartF, Opts) when is_function(StartF) ->
     ParentPid = self(),
     proc_lib:spawn_opt(Node, fun() ->
                                      init(Mod, StartF, ParentPid)
@@ -502,9 +502,9 @@ system_continue(Parent, Debug, IntState) ->
 
 
 
-continue(State, Cont) when function(Cont) ->
+continue(State, Cont) when is_function(Cont) ->
     Cont(State);
-continue(State, Cont) when atom(Cont) ->
+continue(State, Cont) when is_atom(Cont) ->
     #info{sys = #sys{mod = Mod}} = get({?MODULE, info}),
     Mod:Cont(State).
 
@@ -531,7 +531,7 @@ system_code_change(IntState, Module, OldVsn, Extra) ->
     case apply(Module, code_change, [OldVsn, State, Extra]) of
 	{ok, NewState} ->
 	    {ok, {Sys, NewState}};
-	{ok, NewState, NewOptions} when list(NewOptions) ->
+	{ok, NewState, NewOptions} when is_list(NewOptions) ->
 	    NewSys = process_options(NewOptions, Sys),
 	    {ok, {NewSys, NewState}}
     end.
@@ -553,9 +553,9 @@ system_code_change(IntState, Module, OldVsn, Extra) ->
 format_status(Opt, StatusData) ->
     [PDict, SysState, Parent, Debug, IntState] = StatusData,
     {#sys{mod = Mod, name = Name}, State} = IntState,
-    NameTag = if pid(Name) ->
+    NameTag = if is_pid(Name) ->
 		      pid_to_list(Name);
-		 atom(Name) ->
+		 is_atom(Name) ->
 		      Name
 	      end,
     Header = lists:concat(["Status for plain_fsm ", NameTag]),
